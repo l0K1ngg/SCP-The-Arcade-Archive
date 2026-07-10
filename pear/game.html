@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>早梨大人的生日大闯关</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
+    <style>
+        @font-face { font-family: 'Fusion Pixel'; src: url('./fusion-pixel.woff2') format('woff2'); }
+
+        :root {
+            --primary: #00ffff;
+            --secondary: #ff00ff;
+        }
+
+        body {
+            margin: 0; height: 100vh; overflow: hidden;
+            font-family: 'Fusion Pixel', monospace;
+            background-color: #030108; 
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* 动态背景层 */
+        #bg-elements { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; opacity: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, #030108 0%, #0d041a 40%, #15052b 100%); }
+        .horizon-glow { position: absolute; bottom: 45vh; width: 100vw; height: 50vh; background: radial-gradient(ellipse at bottom, color-mix(in srgb, var(--primary) 20%, transparent) 0%, transparent 60%); }
+        .cyber-waves { position: absolute; top: 10%; width: 100vw; height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .wave { position: absolute; width: 150vw; height: 300px; border-top: 4px solid var(--primary); border-radius: 50% 50% 0 0; box-shadow: 0 -10px 40px var(--secondary), inset 0 10px 20px color-mix(in srgb, var(--primary) 30%, transparent); mix-blend-mode: screen; transition: border-color 0.5s, box-shadow 0.5s; }
+        .w1 { animation: waveFloat 4s infinite ease-in-out alternate; opacity: 0.8; }
+        .w2 { top: 50px; border-top-color: var(--secondary); box-shadow: 0 -10px 30px var(--primary); animation: waveFloat 6s infinite ease-in-out alternate-reverse; width: 180vw; opacity: 0.6; }
+        .w3 { top: 100px; border-top: 2px solid #fff; box-shadow: 0 -5px 20px var(--primary); animation: waveFloat 3s infinite ease-in-out alternate; width: 120vw; opacity: 0.9; }
+        @keyframes waveFloat { 0% { transform: translateY(0) scaleY(1); } 100% { transform: translateY(-40px) scaleY(1.3); } }
+
+        /* 3D 透视网格 */
+        .grid-wrapper { position: absolute; bottom: 0; left: 0; width: 100vw; height: 50vh; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 40%, black 100%), linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%); -webkit-mask-composite: source-in; mask-composite: intersect; transform: translateZ(0); will-change: transform; overflow: hidden; pointer-events: none; }
+        .synth-grid { position: absolute; top: 0; left: -50vw; width: 200vw; height: 200%; background-image: linear-gradient(color-mix(in srgb, var(--primary) 70%, transparent) 2px, transparent 2px), linear-gradient(90deg, color-mix(in srgb, var(--primary) 40%, transparent) 2px, transparent 2px); background-size: 80px 80px; transform-origin: top center; transform: perspective(700px) rotateX(70deg); animation: gridMove 2s linear infinite; will-change: background-position; transition: background-image 0.5s; }
+        @keyframes gridMove { 0% { background-position: 0 0; } 100% { background-position: 0 80px; } }
+
+        /* 街机外壳与组件 */
+        .arcade-cabinet { position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; width: 900px; max-width: 95vw; background-image: linear-gradient(180deg, rgba(20,15,30,0.95) 0%, rgba(10,8,15,0.98) 100%), repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,0.02) 2px, rgba(255,255,255,0.02) 4px); border: 6px solid var(--primary); border-bottom: none; border-radius: 20px 20px 0 0; box-shadow: 0 0 30px color-mix(in srgb, var(--primary) 40%, transparent), inset 0 0 40px rgba(0,0,0,1), inset 10px 0 30px color-mix(in srgb, var(--secondary) 30%, transparent); padding: 20px 20px 0 20px; transition: border-color 0.5s, box-shadow 0.5s; }
+        .marquee-header { width: 105%; height: 100px; background: #050505; clip-path: polygon(5% 0, 95% 0, 100% 100%, 0% 100%); border-bottom: 4px solid var(--secondary); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 -15px 30px color-mix(in srgb, var(--secondary) 30%, transparent); margin-bottom: 25px; margin-top: -10px; transition: border-color 0.5s, box-shadow 0.5s; }
+        .neon-title { color: #222; font-size: 38px; letter-spacing: 4px; transition: color 0.3s, text-shadow 0.3s; }
+        .neon-title.active { color: #fff; text-shadow: 0 0 10px #fff, 0 0 20px var(--primary), 0 0 40px var(--secondary); }
+
+        /* 屏幕渲染区 */
+        .screen-chassis { width: 100%; padding: 30px; background: #050505; border-radius: 15px; border: 2px solid #222; box-sizing: border-box; position: relative; background-image: repeating-linear-gradient(-45deg, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 20px, rgba(255,255,0,0.04) 20px, rgba(255,255,0,0.04) 40px); }
+        #neon-card { width: 100%; height: 45vh; background: #000; border-radius: 10px; position: relative; overflow: hidden; box-shadow: inset 0 0 0 rgba(0,0,0,1); border: 2px solid #111; transition: box-shadow 0.5s; }
+        .crt-glare { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%); pointer-events: none; z-index: 12; }
+        .crt-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%), radial-gradient(circle at center, transparent 30%, #000 120%); background-size: 100% 4px, 100% 100%; pointer-events: none; opacity: 0; z-index: 10; }
+        .screen-content { position: relative; width: 100%; height: 100%; opacity: 0; z-index: 5; }
+        
+        /* 游戏大厅内置 UI */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; text-align: center; background: #000; z-index: 6; }
+        #level-num { color: var(--secondary); font-size: 20px; text-shadow: 0 0 10px var(--secondary); transition: color 0.5s, text-shadow 0.5s; }
+        #game-name { color: #fff; font-size: 48px; text-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary); transition: text-shadow 0.5s; }
+        #status-text { color: #ff0033; font-size: 24px; font-weight: bold; letter-spacing: 2px; text-shadow: 0 0 10px #ff0033, 0 0 20px #ff0033; animation: arcadeBlink 1s infinite; }
+        #start-hint { color: #fff; font-size: 22px; font-weight: bold; text-shadow: 0 0 10px #fff; display: none; animation: arcadeBlink 1.5s infinite; margin-top: 10px; }
+        
+        /* 选关控制器样式 */
+        .dev-selector-wrap { position: absolute; bottom: 10px; left: 10px; z-index: 99; background: rgba(20,20,35,0.9); padding: 5px 10px; border: 1px dashed var(--primary); border-radius: 4px; display: flex; align-items: center; gap: 8px; }
+        .dev-selector-wrap label { color: #aaa; font-size: 11px; }
+        .dev-selector-wrap select { background: #000; color: var(--primary); border: 1px solid #444; font-family: inherit; font-size: 12px; outline: none; cursor: pointer; }
+
+        @keyframes arcadeBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+        /* 游戏 iframe */
+        #game-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; background: transparent; display: none; z-index: 5; }
+
+        /* Stage Clear 文字层 */
+        #stage-clear-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 50; gap: 20px; }
+        .clear-text { color: #ff0; font-size: 72px; text-shadow: 5px 5px 0 #f00; animation: arcadeBlink 0.3s infinite; }
+        .clear-hint { color: #fff; font-size: 24px; font-weight: bold; animation: arcadeBlink 1.5s infinite; margin-top: 20px; }
+
+        /* 终极通关文字 */
+        #final-message { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; opacity: 0; gap: 20px; z-index: 20; background: rgba(10, 8, 15, 0.95); }
+        .final-title { color: #f1c40f; font-size: 32px; text-shadow: 0 0 20px #f1c40f, 0 0 40px #e67e22; animation: arcadeBlink 2s infinite; z-index: 30; position: relative;}
+        .final-main { color: #fff; font-size: 42px; text-shadow: 0 0 15px var(--primary), 0 0 30px var(--primary); z-index: 30; position: relative;}
+        .final-wish { color: var(--secondary); font-size: 26px; text-shadow: 0 0 10px var(--secondary); margin-top: 15px; z-index: 30; position: relative;}
+
+        /* 烟花粒子样式 */
+        .fw-particle { position: absolute; pointer-events: none; z-index: 25; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+
+        /* ================= 【特效层】想见你闪回 & 视频 & 过载特效 ================= */
+        #video-container { position: absolute; top:0; left:0; width:100%; height:100%; display:none; background:#000; z-index: 60; }
+        #retro-video { width:100%; height:100%; object-fit: cover; }
+        
+        #flashback-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background:#fff; mix-blend-mode: color-dodge; opacity:0; pointer-events:none; z-index: 70; }
+        
+        #overload-glitch { position: absolute; top:0; left:0; width:100%; height:100%; background:transparent; opacity:0; pointer-events:none; z-index: 80; overflow:hidden; }
+        .glitch-bar { position:absolute; width:100%; background:rgba(255,255,255,0.2); }
+
+        /* ================= 【物理操作控制台】 ================= */
+        .control-deck-wrapper { perspective: 800px; width: 105%; margin-top: -10px; }
+        .control-deck { 
+            position: relative; 
+            background: linear-gradient(180deg, #221d33 0%, #0a0812 100%); 
+            border-top: 4px solid var(--secondary); border-bottom: 8px solid var(--primary); 
+            border-left: 4px solid var(--primary); border-right: 4px solid var(--primary); 
+            border-radius: 5px 5px 15px 15px; padding: 30px 40px 40px 40px; 
+            display: flex; justify-content: space-between; align-items: center; 
+            transform-origin: top center; transform: rotateX(25deg); 
+            box-shadow: 0 40px 50px rgba(0,0,0,0.9), inset 0 10px 20px rgba(255,255,255,0.08); 
+            transition: border-color 0.5s; 
+        }
+
+        .deck-section { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+        /* 左侧：街机四向按键阵列 */
+        .dpad-module { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+        .dpad-row { display: flex; gap: 6px; }
+        .dir-btn {
+            width: 48px; height: 48px; border-radius: 50%;
+            background: #2a2a2a; border: 3px solid #111;
+            box-shadow: 0 6px 0 #000, 0 10px 10px rgba(0,0,0,0.7), inset 0 2px 4px rgba(255,255,255,0.1);
+            color: #888; font-family: 'Fusion Pixel', monospace; font-size: 16px; font-weight: bold;
+            cursor: pointer; transition: all 0.05s ease;
+            display: flex; justify-content: center; align-items: center; user-select: none;
+            outline: none;
+        }
+        .dir-btn.pressed {
+            transform: translateY(6px); 
+            box-shadow: 0 0px 0 #000, 0 2px 5px rgba(0,0,0,0.8), 0 0 20px var(--primary);
+            background: #e0f7fa; color: #000;
+        }
+
+        /* 中间：主电源模块 */
+        .center-action-module { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        
+        .power-switch-container { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        #power-btn { 
+            width: 45px; height: 45px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #a00, #400); 
+            border: 4px solid #050505; box-shadow: 0 6px 0 #000, 0 10px 10px rgba(0,0,0,0.9), inset 0 2px 4px rgba(255,255,255,0.4); 
+            cursor: pointer; transition: all 0.1s; outline: none;
+        }
+        #power-btn.on { background: radial-gradient(circle at 30% 30%, #f00, #900); box-shadow: 0 0 20px #f00; }
+        #power-btn:active { transform: translateY(6px); box-shadow: 0 0px 0 #000, 0 2px 4px rgba(0,0,0,0.9); }
+        .power-text { color: var(--primary); font-size: 12px; text-shadow: 0 0 5px var(--primary); letter-spacing: 1px; }
+
+        /* “拍”键 */
+        .arcade-smack-btn {
+            position: absolute;
+            top: 50%;
+            left: 74%; 
+            transform: translate(-50%, -50%) translateZ(0); 
+            width: 80px; height: 80px; border-radius: 50%;
+            background: radial-gradient(circle at 50% 30%, #ff4d4d, #c0392b);
+            border: 4px solid #111;
+            box-shadow: 
+                0 3px 0 #600, 
+                0 4px 0 #111, 
+                0 6px 12px rgba(0,0,0,0.9), 
+                inset 0 3px 5px rgba(255,255,255,0.4), 
+                inset 0 -5px 10px rgba(0,0,0,0.4); 
+            color: #fff; font-size: 32px; font-weight: bold; font-family: inherit; text-shadow: 2px 2px 0 rgba(0,0,0,0.6);
+            cursor: pointer; transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.08s ease; outline: none; user-select: none;
+            z-index: 2;
+            transform-style: preserve-3d; 
+        }
+        .arcade-smack-btn.pressed {
+            transform: translate(-50%, -50%) translateZ(0) translateY(4px); 
+            box-shadow: 
+                0 0px 0 #600, 0 1px 0 #111, 
+                0 2px 4px rgba(0,0,0,0.9), 0 0 30px #ff0000, 
+                inset 0 2px 5px rgba(0,0,0,0.5);
+            background: #ff4757; color: #fff; text-shadow: 0 0 10px #fff;
+        }
+
+        /* 右侧：投币口 */
+        .coin-box { display: flex; align-items: flex-end; gap: 20px; }
+        .slot-module { 
+            background: linear-gradient(135deg, #2a2a2a, #151515); padding: 25px 20px 30px 20px; 
+            border-radius: 8px; border: 2px solid #444; box-shadow: inset 2px 2px 5px rgba(255,255,255,0.1), 0 10px 20px rgba(0,0,0,0.9); 
+            display: flex; flex-direction: column; align-items: center; gap: 15px; position: relative; 
+        }
+        .slot-module::after { content: '¥ 1.00'; position: absolute; bottom: 8px; color: #555; font-size: 10px; }
+        #coin-slot { width: 14px; height: 70px; background: #000; border: 2px solid #111; border-radius: 6px; box-shadow: inset 0 0 15px #000; transition: border-color 0.2s; }
+        .slot-light { width: 22px; height: 6px; background: #333; border-radius: 3px; transition: background 0.2s; }
+        .tray-module { 
+            width: 100px; height: 80px; background: #050505; border-radius: 10px; 
+            border: 2px solid #222; border-bottom: 6px solid #000; 
+            box-shadow: inset 0 25px 30px rgba(0,0,0,1), inset 0 2px 6px color-mix(in srgb, var(--primary) 20%, transparent); 
+            display: flex; align-items: center; justify-content: center; position: relative; 
+        }
+
+        /* 右下角全局固定早梨立牌挂件 */
+        .bongo-mascot {
+            display: none; position: fixed; bottom: 15px; right: 20px; width: 210px; z-index: 999; 
+            pointer-events: none; filter: drop-shadow(0 0 15px rgba(0, 255, 255, 0.3)); transition: transform 0.05s ease;
+        }
+        .bongo-mascot img { width: 100%; height: auto; display: none; image-rendering: pixelated; image-rendering: crisp-edges; }
+        #bongo-up { display: block; }
+
+        /* 【PNG硬币 - 2.5倍版】缩小到 112.5px 且完全去除任何阴影/特效 */
+        #coin { 
+            width: 112.5px; height: 112.5px; 
+            background-image: url('image_0.png'); 
+            background-size: cover; background-position: center; 
+            background-repeat: no-repeat; 
+            box-shadow: none; /* 去除一切阴影特效 */
+            display: none; align-items: center; justify-content: center; 
+            cursor: grab; position: absolute; z-index: 100; 
+            border-radius: 50%; 
+            transform-style: preserve-3d; 
+        }
+        #coin::after { content: none; } 
+    </style>
+</head>
+<body>
+
+    <div id="bg-elements">
+        <div class="horizon-glow"></div>
+        <div class="cyber-waves"><div class="wave w1"></div><div class="wave w2"></div><div class="wave w3"></div></div>
+        <div class="grid-wrapper"><div class="synth-grid"></div></div>
+    </div>
+
+    <div class="arcade-cabinet">
+        <div class="marquee-header" id="marquee-board">
+            <div class="neon-title" id="main-title">早梨大人的生日大闯关</div>
+        </div>
+        <div class="screen-chassis">
+            <div id="neon-card">
+                <div class="crt-layer"></div>
+                <div class="crt-glare"></div>
+                
+                <div class="screen-content" id="screen-content">
+                    <div id="ui-layer">
+                        <div id="level-num">第 1 关</div>
+                        <div id="game-name">记忆翻牌</div>
+                        <div id="status-text">请投币 (INSERT COIN)</div>
+                        <div id="start-hint">拍击 或 按空格键 开始游戏</div>
+                        <div style="font-size: 12px; color: #222; margin-top: 20px; cursor: default;" ondblclick="if(appState==='PLAYING' || appState==='READY') winGame();">[DEV]</div>
+                    </div>
+
+                    <iframe id="game-frame" src=""></iframe>
+
+                    <div class="dev-selector-wrap" id="dev-stage-selector">
+                        <label>[DEV/测试] 关卡跳转:</label>
+                        <select id="stage-select-dropdown" onchange="devJumpToStage(this.value)">
+                            <option value="0">第 1 关：记忆翻牌</option>
+                            <option value="1">第 2 关：打砖块</option>
+                            <option value="2">第 3 关：堆叠大蛋糕</option>
+                            <option value="3">第 4 关：滑块拼图</option>
+                            <option value="4">第 5 关：抓娃娃</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="final-message">
+                    <div class="final-title">ALL STAGES CLEARED!</div>
+                    <div class="final-main">恭喜梨子完全通关</div>
+                    <div class="final-wish">请早梨大人选下生日愿望吧 ✦</div>
+                </div>
+
+                <div id="stage-clear-overlay">
+                    <div class="clear-text">STAGE CLEAR!</div>
+                    <div class="clear-hint">拍击 或 按空格键 进入下一关</div>
+                </div>
+
+                <div id="video-container">
+                    <video id="retro-video" src="vid1.mp4" preload="auto"></video>
+                </div>
+                <div id="flashback-overlay"></div>
+                <div id="overload-glitch"></div>
+            </div>
+        </div>
+
+        <div class="control-deck-wrapper">
+            <div class="control-deck">
+                
+                <div class="deck-section dpad-module">
+                    <button class="dir-btn" id="dir-up">W</button>
+                    <div class="dpad-row">
+                        <button class="dir-btn" id="dir-left">A</button>
+                        <button class="dir-btn" id="dir-down">S</button>
+                        <button class="dir-btn" id="dir-right">D</button>
+                    </div>
+                </div>
+                
+                <div class="deck-section center-action-module">
+                    <div class="power-switch-container" id="power-area">
+                        <button id="power-btn" onclick="bootMachine()"></button>
+                        <div class="power-text">MAIN POWER</div>
+                    </div>
+                    <div style="width: 100px; height: 100px; pointer-events: none;"></div>
+                    <button id="smack-btn" class="arcade-smack-btn">拍</button>
+                </div>
+
+                <div class="deck-section coin-box">
+                    <div class="slot-module">
+                        <div id="coin-slot"></div><div class="slot-light" id="slot-light"></div>
+                    </div>
+                    <div class="tray-module" id="coin-tray"></div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <div id="coin"></div>
+
+    <div class="bongo-mascot" id="zaoli-bongo">
+        <img id="bongo-up" src="pear1.png" alt="Idle Zaoli">
+        <img id="bongo-down" src="pear2.png" alt="Zaoli Push">
+    </div>
+
+    <script>
+        const GAME_STAGES = [
+            { name: "记忆翻牌", file: "game1.html" },
+            { name: "打砖块", file: "game2.html" },
+            { name: "堆叠大蛋糕", file: "game3.html" },
+            { name: "滑块拼图", file: "game4.html" },
+            { name: "抓娃娃", file: "game5.html" }
+        ];
+        
+        const THEMES = [
+            { p: "#00ffff", s: "#ff00ff" }, 
+            { p: "#00ff00", s: "#ffff00" }, 
+            { p: "#ff8c00", s: "#ff0000" }, 
+            { p: "#9d00ff", s: "#0055ff" }, 
+            { p: "#ff0055", s: "#ffffff" }  
+        ];
+
+        let appState = 'OFF';
+        let currentStage = 0; 
+        let draggableCoin = null;
+        let isPoweredOn = false;
+        let flashbackTimeout = null; 
+        let fireworkInterval = null; 
+
+        // ==================== 【音频系统设计】 ====================
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        let bgmPlaylist = ["bit1.mp3", "bit2.mp3", "bit3.mp3", "bit4.mp3", "bit5.mp3"];
+        let currentBgmIndex = 0;
+        let bgmAudioElement = new Audio();
+        let isBgmPlaying = false;
+
+        function initBgmTrackQueue() {
+            bgmAudioElement.addEventListener('ended', function() {
+                currentBgmIndex = (currentBgmIndex + 1) % bgmPlaylist.length; 
+                bgmAudioElement.src = bgmPlaylist[currentBgmIndex];
+                bgmAudioElement.play().catch(e => console.log("BGM 队列播放中断重定向:", e));
+            });
+        }
+        initBgmTrackQueue();
+
+        function startPlaylistLoop() {
+            if (isBgmPlaying) return;
+            isBgmPlaying = true;
+            currentBgmIndex = 0;
+            bgmAudioElement.src = bgmPlaylist[currentBgmIndex];
+            bgmAudioElement.volume = 0.4; 
+            bgmAudioElement.loop = false; 
+            bgmAudioElement.play().catch(e => {
+                console.log("浏览器限制了音频自动播放，将在用户交互时重新激活。");
+                const tryPlayAgain = () => {
+                    if(isBgmPlaying) { bgmAudioElement.play().catch(err=>{"仍受限"}); }
+                    window.removeEventListener('click', tryPlayAgain);
+                };
+                window.addEventListener('click', tryPlayAgain);
+            });
+        }
+
+        function stopPlaylistLoop() {
+            isBgmPlaying = false;
+            gsap.to(bgmAudioElement, { volume: 0, duration: 0.8, onComplete: () => {
+                bgmAudioElement.pause();
+                bgmAudioElement.src = "";
+            }});
+        }
+
+        function play8BitSound(type) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+
+            if (type === 'click') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(10, now + 0.1);
+                gain.gain.setValueAtTime(0.5, now); gain.gain.linearRampToValueAtTime(0, now + 0.1); osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'zap') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(50, now);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 0.05); osc.start(now); osc.stop(now + 0.05);
+            } else if (type === 'coin') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(987.77, now); osc.frequency.setValueAtTime(1318.51, now + 0.1); 
+                gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2); osc.start(now); osc.stop(now + 0.2);
+            } else if (type === 'synthesize') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1200, now + 1);
+                gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.2, now + 0.5); gain.gain.linearRampToValueAtTime(0, now + 1);
+                osc.start(now); osc.stop(now + 1);
+            } else if (type === 'powerup') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(600, now + 0.3);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.3); osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'stage_clear') {
+                osc.type = 'square'; let freqs = [392, 523, 659, 783, 1046, 1318];
+                freqs.forEach((f, i) => { osc.frequency.setValueAtTime(f, now + i * 0.1); });
+                gain.gain.setValueAtTime(0.15, now); gain.gain.linearRampToValueAtTime(0, now + 0.6); osc.start(now); osc.stop(now + 0.6);
+            } else if (type === 'true_ending') {
+                osc.type = 'square';
+                let freqs = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98];
+                freqs.forEach((f, i) => { osc.frequency.setValueAtTime(f, now + i * 0.12); });
+                gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 2.0); osc.start(now); osc.stop(now + 2.0);
+            } else if (type === 'explosion') {
+                const bufferSize = audioCtx.sampleRate * 0.4;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
+                const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+                const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.setValueAtTime(800, now);
+                filter.frequency.exponentialRampToValueAtTime(10, now + 0.4);
+                gain.gain.setValueAtTime(0.4, now); gain.gain.linearRampToValueAtTime(0, now + 0.4);
+                noise.connect(filter); filter.connect(gain); noise.start(now); noise.stop(now + 0.4);
+            } else if (type === 'fw_launch') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.5);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.5); osc.start(now); osc.stop(now + 0.5);
+            } else if (type === 'fw_boom') {
+                const bufferSize = audioCtx.sampleRate * 0.5;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) { data[i] = Math.random() * 2 - 1; }
+                const noise = audioCtx.createBufferSource(); noise.buffer = buffer;
+                const filter = audioCtx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.setValueAtTime(Math.random() * 1000 + 500, now);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                noise.connect(filter); filter.connect(gain); noise.start(now); noise.stop(now + 0.5);
+            }
+        }
+
+        // ==================== 【烟花粒子系统逻辑】 ====================
+        function shootFirework() {
+            const container = document.getElementById("final-message");
+            if(container.style.display === "none") return;
+
+            const fw = document.createElement("div");
+            fw.className = "fw-particle";
+            fw.style.bottom = "0%";
+            fw.style.left = (15 + Math.random() * 70) + "%";
+            fw.style.width = "4px"; fw.style.height = "12px";
+            fw.style.backgroundColor = "white"; fw.style.boxShadow = "none";
+            container.appendChild(fw);
+
+            play8BitSound('fw_launch');
+
+            gsap.to(fw, {
+                bottom: (50 + Math.random() * 40) + "%",
+                duration: 0.6 + Math.random() * 0.4,
+                ease: "power1.out",
+                onComplete: () => {
+                    const finalLeft = fw.style.left;
+                    const finalBottom = parseFloat(fw.style.bottom);
+                    fw.remove();
+                    explodeFirework(finalLeft, finalBottom);
+                }
+            });
+        }
+
+        function explodeFirework(left, bottom) {
+            play8BitSound('fw_boom');
+            const container = document.getElementById("final-message");
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffffff', '#f1c40f', '#ff8c00'];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            for(let i=0; i<30; i++) {
+                const p = document.createElement("div");
+                p.className = "fw-particle";
+                p.style.left = left; p.style.bottom = bottom + "%";
+                p.style.width = "5px"; p.style.height = "5px";
+                p.style.backgroundColor = color; p.style.color = color;
+                container.appendChild(p);
+
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 20 + Math.random() * 80;
+                const animDuration = 0.5 + Math.random() * 0.8;
+                
+                gsap.to(p, {
+                    x: Math.cos(angle) * distance,
+                    y: Math.sin(angle) * distance * -1, 
+                    opacity: 0,
+                    duration: animDuration,
+                    ease: "power2.out",
+                    onComplete: () => p.remove()
+                });
+            }
+        }
+
+        function startFireworks() {
+            if(fireworkInterval) clearInterval(fireworkInterval);
+            fireworkInterval = setInterval(shootFirework, 600);
+        }
+
+        function stopFireworks() {
+            if(fireworkInterval) clearInterval(fireworkInterval);
+            document.querySelectorAll(".fw-particle").forEach(p => p.remove());
+        }
+
+        // ==================== 【选关中枢逻辑】 ====================
+        function devJumpToStage(stageIdx) {
+            stageIdx = parseInt(stageIdx);
+            currentStage = stageIdx;
+            
+            if (appState !== 'OFF' && appState !== 'WAITING_COIN') {
+                document.getElementById("stage-clear-overlay").style.display = "none";
+                document.getElementById("final-message").style.display = "none";
+                document.getElementById("screen-content").style.display = "block";
+                stopFireworks();
+                if(flashbackTimeout) clearTimeout(flashbackTimeout);
+                
+                appState = 'WAITING_COIN';
+                updateThemeColor(currentStage);
+                document.getElementById("level-num").innerText = "第 " + (currentStage + 1) + " 关";
+                document.getElementById("game-name").innerText = GAME_STAGES[currentStage].name;
+                document.getElementById("status-text").style.display = "block";
+                document.getElementById("start-hint").style.display = "none";
+                
+                let iframe = document.getElementById("game-frame");
+                iframe.style.display = "none";
+                iframe.src = "";
+
+                synthesizeCoinToTray();
+            } else {
+                document.getElementById("level-num").innerText = "第 " + (currentStage + 1) + " 关";
+                document.getElementById("game-name").innerText = GAME_STAGES[currentStage].name;
+                updateThemeColor(currentStage);
+            }
+        }
+
+        function updateThemeColor(stageIdx) {
+            let t = THEMES[stageIdx % THEMES.length];
+            gsap.to(document.documentElement, { "--primary": t.p, "--secondary": t.s, duration: 1.5, ease: "power2.inOut" });
+        }
+
+        function bootMachine() {
+            if (isPoweredOn) return;
+            isPoweredOn = true;
+            play8BitSound('click');
+
+            document.getElementById("power-btn").classList.add("on");
+            
+            let tl = gsap.timeline();
+            const flickers = [{bg: "#fff", dur: 0.05, zap: true}, {bg: "#000", dur: 0.1}, {bg: "#fff", dur: 0.02, zap: true}, {bg: "#000", dur: 0.2}, {bg: "#fff", dur: 0.05, zap: true}];
+
+            flickers.forEach(f => { tl.to("#neon-card", { backgroundColor: f.bg, duration: f.dur, onStart: () => { if(f.zap) play8BitSound('zap'); } }); });
+
+            tl.to("#bg-elements", { opacity: 1, duration: 1.5 }, "boot")
+            .to("#neon-card", { backgroundColor: "rgba(10, 15, 20, 0.95)", boxShadow: "inset 0 0 60px rgba(0, 0, 0, 0.9), 0 0 40px color-mix(in srgb, var(--primary) 30%, transparent)", duration: 0.3 }, "boot")
+            .to("#marquee-board", { background: "#111", duration: 0.3 }, "boot")
+            .add(() => { document.getElementById("main-title").classList.add("active"); }, "boot")
+            .to("#slot-light", { background: "#f00", boxShadow: "0 0 10px #f00", duration: 0.3 }, "boot")
+            .to(".crt-layer", { opacity: 1, duration: 0.5 }, "boot")
+            .to("#screen-content", { opacity: 1, duration: 0.5 }, "+=0.2")
+            
+            .to("#power-area", { opacity: 0, pointerEvents: "none", duration: 0.5 }, "<")
+            
+            .add(() => {
+                const bongo = document.getElementById("zaoli-bongo");
+                bongo.style.display = "block";
+                gsap.fromTo(bongo, 
+                    { opacity: 0, scale: 0.3, y: 50 }, 
+                    { opacity: 1, scale: 1, y: 0, duration: 0.6, ease: "back.out(1.4)" }
+                );
+            })
+
+            .add(() => { appState = 'WAITING_COIN'; synthesizeCoinToTray(); }, "+=0.5");
+        }
+
+        gsap.registerPlugin(Draggable);
+
+        /* 【2.5倍尺寸精密对齐】 135 / 3 * 2.5 = 112.5px */
+        const COIN_SIZE = 112.5;
+        const COIN_HALF_SIZE = COIN_SIZE / 2;
+
+        function initCoin() {
+            if (draggableCoin) draggableCoin[0].kill();
+            
+            draggableCoin = Draggable.create("#coin", {
+                type: "x,y", bounds: window,
+                onDragStart: () => { 
+                    if(audioCtx.state === 'suspended') audioCtx.resume();
+                    if(isBgmPlaying && bgmAudioElement.paused) bgmAudioElement.play().catch(e=>{});
+                },
+                onDrag: function() {
+                    if (this.hitTest("#coin-slot", "50%")) {
+                        gsap.to("#slot-light", { background: "var(--primary)", boxShadow: "0 0 15px var(--primary)", duration: 0.1 });
+                        gsap.to("#coin-slot", { borderColor: "var(--primary)", boxShadow: "inset 0 0 15px var(--primary)", duration: 0.1 });
+                    } else {
+                        gsap.to("#slot-light", { background: "#f00", boxShadow: "0 0 10px #f00", duration: 0.1 });
+                        gsap.to("#coin-slot", { borderColor: "#111", boxShadow: "inset 0 0 15px #000", duration: 0.1 });
+                    }
+                },
+                onRelease: function() {
+                    if (this.hitTest("#coin-slot", "50%")) {
+                        this.disable(); play8BitSound('coin');
+
+                        let slot = document.getElementById('coin-slot').getBoundingClientRect();
+                        let targetX = slot.left + slot.width/2 - COIN_HALF_SIZE;
+                        let targetY = slot.top + slot.height/2 - COIN_HALF_SIZE;
+
+                        let tl = gsap.timeline();
+                        tl.to("#coin", { left: targetX, top: targetY, x: 0, y: 0, z: 0.1, scale: 0.1, opacity: 0, duration: 0.3, ease: "back.in(1.5)" })
+                        .to("#neon-card", { boxShadow: "inset 0 0 80px rgba(0, 0, 0, 0.9), 0 0 60px color-mix(in srgb, var(--primary) 50%, transparent)", duration: 0.2 })
+                        .add(() => play8BitSound('powerup'), "-=0.2")
+                        .add(() => {
+                            appState = 'READY';
+                            document.getElementById("status-text").style.display = "none";
+                            document.getElementById("start-hint").style.display = "block";
+                            gsap.to("#slot-light", { background: "#f00", boxShadow: "0 0 10px #f00", duration: 0.5 });
+                            gsap.to("#coin-slot", { borderColor: "#111", boxShadow: "inset 0 0 15px #000", duration: 0.5 });
+                        });
+                    } else {
+                        gsap.to("#coin", { x: 0, y: 0, duration: 0.5, ease: "elastic.out(1, 0.6)" });
+                    }
+                }
+            });
+        }
+
+        function synthesizeCoinToTray() {
+            let coin = document.getElementById("coin");
+            let tray = document.getElementById("coin-tray").getBoundingClientRect();
+            
+            coin.style.display = "flex";
+            gsap.set("#coin", { 
+                left: tray.left + tray.width/2 - COIN_HALF_SIZE, 
+                top: tray.top + tray.height/2 - COIN_HALF_SIZE - 20, 
+                z: 0.1, 
+                x: 0, y: 0, scale: 1.1, opacity: 0, rotationX: 0, rotationY: 0, filter: "brightness(10) blur(15px) hue-rotate(90deg)" 
+            });
+            
+            let tl = gsap.timeline({ 
+                onStart: () => play8BitSound('synthesize'), 
+                onComplete: () => { 
+                    initCoin(); 
+                    startPlaylistLoop();
+                } 
+            });
+            tl.to("#coin", { opacity: 0.7, duration: 0.08, repeat: 3, yoyo: true, filter: "brightness(5) blur(5px) hue-rotate(45deg)", ease: "none" })
+              .to("#coin", { 
+                  top: tray.top + tray.height/2 - COIN_HALF_SIZE, 
+                  z: 0.1, 
+                  scale: 1, opacity: 1, filter: "brightness(1) blur(0px) hue-rotate(0deg)", duration: 0.8, ease: "power2.out" 
+              }, "+=0.1");
+        }
+
+        function startGame() {
+            appState = 'PLAYING';
+            document.getElementById("ui-layer").style.display = "none";
+            let iframe = document.getElementById("game-frame");
+            iframe.src = GAME_STAGES[currentStage].file; 
+            iframe.style.display = "block";
+        }
+
+        window.addEventListener("message", function(event) {
+            if (event.data === "STAGE_CLEAR") {
+                winGame();
+            }
+        });
+
+        function winGame() {
+            appState = 'STAGE_CLEAR';
+            let iframe = document.getElementById("game-frame");
+            iframe.style.display = "none";
+            iframe.src = "";
+            document.getElementById("ui-layer").style.display = "flex";
+            document.getElementById("start-hint").style.display = "none";
+
+            play8BitSound('stage_clear');
+            let flashTl = gsap.timeline();
+            flashTl.to("#neon-card", { backgroundColor: "#fff", duration: 0.1 }).to("#neon-card", { backgroundColor: "rgba(10, 15, 20, 0.95)", duration: 0.2 });
+
+            document.getElementById("stage-clear-overlay").style.display = "flex";
+        }
+
+        function acknowledgeStageClear() {
+            document.getElementById("stage-clear-overlay").style.display = "none";
+            currentStage++;
+            
+            const dropDown = document.getElementById("stage-select-dropdown");
+            if(dropDown && currentStage < GAME_STAGES.length) {
+                dropDown.value = currentStage;
+            }
+
+            if (currentStage >= GAME_STAGES.length) {
+                appState = 'ALL_CLEARED';
+                triggerTrueEnding();
+            } else {
+                appState = 'WAITING_COIN';
+                prepareNextStage();
+            }
+        }
+
+        function prepareNextStage() {
+            updateThemeColor(currentStage);
+            document.getElementById("level-num").innerText = "第 " + (currentStage + 1) + " 关";
+            document.getElementById("game-name").innerText = GAME_STAGES[currentStage].name;
+            document.getElementById("status-text").style.display = "block";
+            gsap.to("#neon-card", { boxShadow: "inset 0 0 60px rgba(0, 0, 0, 0.9), 0 0 40px color-mix(in srgb, var(--primary) 30%, transparent)", duration: 0.5 });
+            synthesizeCoinToTray();
+        }
+
+        function triggerTrueEnding() {
+            stopPlaylistLoop();
+
+            gsap.to(".synth-grid", { opacity: 0.1, duration: 2 });
+            let tl = gsap.timeline();
+            play8BitSound('true_ending');
+
+            for(let i=0; i<12; i++) { tl.to("#neon-card", { backgroundColor: ["#f00", "#0f0", "#00f", "#fff"][i%4], duration: 0.08 }); }
+            
+            tl.to("#neon-card", { backgroundColor: "#fff", boxShadow: "0 0 150px #fff", duration: 0.8 })
+              .add(() => {
+                  document.getElementById("screen-content").style.display = "none";
+                  document.getElementById("final-message").style.display = "flex";
+              })
+              .to("#neon-card", { backgroundColor: "rgba(10, 8, 15, 0.95)", boxShadow: "inset 0 0 80px rgba(0, 0, 0, 0.9), 0 0 60px #f1c40f", duration: 1.5 })
+              .to("#final-message", { opacity: 1, duration: 2 })
+              .add(() => { gsap.to(document.documentElement, { "--primary": "#f1c40f", "--secondary": "#ff007f", duration: 3, repeat: -1, yoyo: true, ease: "sine.inOut" }); }, "-=1.5")
+              .add(() => { startFireworks(); }); 
+
+            // 保持 20 秒后进行闪回
+            flashbackTimeout = setTimeout(() => {
+                stopFireworks(); 
+                triggerFlashbackEffect();
+            }, 20000); 
+        }
+
+        function triggerFlashbackEffect() {
+            appState = 'FLASHBACK';
+            play8BitSound('synthesize');
+            
+            let flashTl = gsap.timeline({
+                onComplete: () => {
+                    startLastDanceVideo();
+                }
+            });
+            
+            flashTl.to("#final-message", { scale: 1.4, rotation: -5, filter: "invert(1) blur(8px) contrast(3)", opacity: 0, duration: 0.5, ease: "power1.in" })
+                    .to("#flashback-overlay", { opacity: 0.85, background: "#fff", duration: 0.2, yoyo: true, repeat: 3 })
+                    .to("#neon-card", { scaleX: 0.1, scaleY: 2, rotation: 15, duration: 0.4, ease: "power2.inOut" })
+                    .to("#flashback-overlay", { opacity: 1, background: "#00ffff", duration: 0.1 });
+        }
+
+        function startLastDanceVideo() {
+            document.getElementById("final-message").style.display = "none";
+            const videoContainer = document.getElementById("video-container");
+            const video = document.getElementById("retro-video");
+            
+            gsap.set("#neon-card", { scaleX: 1, scaleY: 1, rotation: 0, backgroundColor: "#000" });
+            videoContainer.style.display = "block";
+            
+            gsap.to("#flashback-overlay", { opacity: 0, duration: 1 });
+            
+            video.play().catch(e => {
+                console.log("音频上下文未就绪，转为静音自动播放。");
+                video.muted = true;
+                video.play();
+            });
+            
+            video.onended = () => {
+                triggerHardwareOverload();
+            };
+        }
+
+        function triggerHardwareOverload() {
+            appState = 'OVERLOAD';
+            play8BitSound('explosion');
+            
+            const glitchContainer = document.getElementById("overload-glitch");
+            glitchContainer.style.opacity = "1";
+            
+            for(let i=0; i<15; i++) {
+                let bar = document.createElement("div");
+                bar.className = "glitch-bar";
+                bar.style.top = Math.random() * 100 + "%";
+                bar.style.height = (Math.random() * 15 + 2) + "px";
+                glitchContainer.appendChild(bar);
+            }
+
+            let overloadTl = gsap.timeline({
+                onComplete: () => {
+                    resetGameToInit(); 
+                }
+            });
+
+            overloadTl.to("#video-container", { skewX: 45, scaleY: 0.2, filter: "hue-rotate(180deg) invert(1) contrast(5)", duration: 0.15 })
+                      .to(".glitch-bar", { x: () => (Math.random() - 0.5) * 200, backgroundColor: () => ["#ff00ff","#00ffff","#ff0000","#fff"][Math.floor(Math.random()*4)], duration: 0.05, repeat: 10 })
+                      .to("#neon-card", { x: () => (Math.random() - 0.5) * 30, y: () => (Math.random() - 0.5) * 30, duration: 0.05, repeat: 12 })
+                      .to("#neon-card", { backgroundColor: "#fff", filter: "brightness(5)", duration: 0.1 })
+                      .to(".arcade-cabinet", { borderBlockColor: "#000", boxShadow: "0 0 0px transparent", duration: 0.2 }, "<")
+                      .to("#neon-card", { scaleY: 0.01, scaleX: 0.1, backgroundColor: "#fff", duration: 0.15 })
+                      .to("#neon-card", { scaleX: 0, opacity: 0, duration: 0.05 })
+                      .add(() => {
+                          document.getElementById("video-container").style.display = "none";
+                          glitchContainer.innerHTML = "";
+                          glitchContainer.style.opacity = "0";
+                      }, "+=1.5");
+        }
+
+        function resetGameToInit() {
+            if(flashbackTimeout) clearTimeout(flashbackTimeout);
+            stopFireworks();
+            
+            appState = 'OFF';
+            currentStage = 0;
+            isPoweredOn = false;
+
+            const dropDown = document.getElementById("stage-select-dropdown");
+            if(dropDown) dropDown.value = 0;
+
+            const powerBtn = document.getElementById("power-btn");
+            powerBtn.classList.remove("on");
+            gsap.set("#power-btn", { background: "radial-gradient(circle at 30% 30%, #a00, #400)", boxShadow: "0 6px 0 #000" });
+            document.getElementById("power-area").style.pointerEvents = "auto";
+            
+            document.getElementById("main-title").classList.remove("active");
+            document.getElementById("slot-light").style.background = "#333";
+            document.getElementById("slot-light").style.boxShadow = "none";
+            document.getElementById("zaoli-bongo").style.display = "none";
+            document.getElementById("final-message").style.display = "none";
+            document.getElementById("stage-clear-overlay").style.display = "none";
+            
+            document.getElementById("level-num").innerText = "第 1 关";
+            document.getElementById("game-name").innerText = "记忆翻牌";
+            document.getElementById("status-text").style.display = "block";
+            document.getElementById("start-hint").style.display = "none";
+            document.getElementById("screen-content").style.display = "block";
+
+            gsap.set("#bg-elements", { opacity: 0 });
+            gsap.set(".synth-grid", { opacity: 1 });
+            gsap.set("#neon-card", { scaleX: 1, scaleY: 1, opacity: 1, backgroundColor: "#000", boxShadow: "inset 0 0 0 rgba(0,0,0,1)" });
+            gsap.set("#screen-content", { opacity: 0 });
+            gsap.set(".crt-layer", { opacity: 0 });
+            gsap.set("#power-area", { opacity: 1 });
+            updateThemeColor(0);
+            
+            document.getElementById("coin").style.display = "none";
+        }
+
+        // ==================== 【操作中枢】 ====================
+        const bongoUp = document.getElementById('bongo-up');
+        const bongoDown = document.getElementById('bongo-down');
+        const bongoContainer = document.getElementById('zaoli-bongo');
+        const smackBtn = document.getElementById('smack-btn');
+
+        const dirKeys = {
+            'KeyW': 'dir-up', 'ArrowUp': 'dir-up',
+            'KeyA': 'dir-left', 'ArrowLeft': 'dir-left',
+            'KeyS': 'dir-down', 'ArrowDown': 'dir-down',
+            'KeyD': 'dir-right', 'ArrowRight': 'dir-right'
+        };
+
+        let activeKeysCount = 0;
+
+        function pressBongo() {
+            if (!isPoweredOn) return;
+            activeKeysCount++;
+            if (activeKeysCount === 1) {
+                bongoUp.style.display = 'none';
+                bongoDown.style.display = 'block';
+                bongoContainer.style.transform = 'translateY(4px) scale(0.98)';
+            }
+        }
+
+        function releaseBongo() {
+            if (!isPoweredOn) return;
+            activeKeysCount--;
+            if (activeKeysCount <= 0) {
+                activeKeysCount = 0;
+                bongoUp.style.display = 'block';
+                bongoDown.style.display = 'none';
+                bongoContainer.style.transform = 'translateY(0) scale(1)';
+            }
+        }
+
+        function sendReleaseSignal() {
+            const iframe = document.getElementById("game-frame");
+            if (iframe && iframe.style.display === "block") {
+                iframe.contentWindow.postMessage("TRIGGER_RELEASE", "*");
+            }
+        }
+
+        function sendDirSignal(direction, actionType) {
+            const iframe = document.getElementById("game-frame");
+            if (iframe && iframe.style.display === "block") {
+                iframe.contentWindow.postMessage({ type: actionType, key: direction }, "*");
+            }
+        }
+
+        function handleActionPress() {
+            if (!isPoweredOn || smackBtn.classList.contains('pressed')) return; 
+            
+            pressBongo();
+            smackBtn.classList.add('pressed');
+
+            if (appState === 'READY') {
+                startGame();
+            } else if (appState === 'PLAYING') {
+                sendReleaseSignal();
+            } else if (appState === 'STAGE_CLEAR') {
+                acknowledgeStageClear();
+            }
+        }
+
+        function handleActionRelease() {
+            if (!isPoweredOn || !smackBtn.classList.contains('pressed')) return;
+            releaseBongo();
+            smackBtn.classList.remove('pressed');
+        }
+
+        smackBtn.addEventListener('mousedown', handleActionPress);
+        smackBtn.addEventListener('mouseup', handleActionRelease);
+        smackBtn.addEventListener('touchstart', (e) => { e.preventDefault(); handleActionPress(); }, { passive: false });
+        smackBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleActionRelease(); }, { passive: false });
+        smackBtn.addEventListener('mouseleave', handleActionRelease);
+
+        document.querySelectorAll('.dir-btn').forEach(btn => {
+            const pressFn = (e) => {
+                if (e && e.type === 'touchstart') e.preventDefault();
+                if (!isPoweredOn || btn.classList.contains('pressed')) return;
+                btn.classList.add('pressed');
+                pressBongo();
+                sendDirSignal(btn.id, "DIR_KEYDOWN");
+            };
+            const releaseFn = (e) => {
+                if (e && e.type === 'touchend') e.preventDefault();
+                if (!btn.classList.contains('pressed')) return;
+                btn.classList.remove('pressed');
+                releaseBongo();
+                sendDirSignal(btn.id, "DIR_KEYUP");
+            };
+            btn.addEventListener('mousedown', pressFn);
+            btn.addEventListener('mouseup', releaseFn);
+            btn.addEventListener('mouseleave', releaseFn);
+            btn.addEventListener('touchstart', pressFn, { passive: false });
+            btn.addEventListener('touchend', releaseFn, { passive: false });
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat || !isPoweredOn) return; 
+            
+            if (dirKeys[e.code]) {
+                const btn = document.getElementById(dirKeys[e.code]);
+                if (btn && !btn.classList.contains('pressed')) {
+                    btn.classList.add('pressed');
+                    pressBongo();
+                    sendDirSignal(btn.id, "DIR_KEYDOWN");
+                }
+            } else if (e.code === 'Space' || e.code === 'Enter') {
+                e.preventDefault(); 
+                handleActionPress();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (dirKeys[e.code]) {
+                const btn = document.getElementById(dirKeys[e.code]);
+                if (btn && btn.classList.contains('pressed')) {
+                    btn.classList.remove('pressed');
+                    releaseBongo();
+                    sendDirSignal(dirKeys[e.code], "DIR_KEYUP");
+                }
+            } else if (e.code === 'Space' || e.code === 'Enter') {
+                handleActionRelease();
+            }
+        });
+
+        window.addEventListener('blur', () => {
+            handleActionRelease();
+            document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('pressed'));
+            activeKeysCount = 0;
+            if (isPoweredOn) {
+                bongoUp.style.display = 'block';
+                bongoDown.style.display = 'none';
+                bongoContainer.style.transform = 'translateY(0) scale(1)';
+            }
+        });
+    </script>
+</body>
+</html>

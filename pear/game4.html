@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>4x4 滑块拼图 - Canvas 引擎版</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #020105; 
+            color: #00ffff; 
+            font-family: monospace; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            overflow: hidden; 
+            user-select: none;
+        }
+        
+        .glitch { 
+            font-size: 28px; 
+            font-weight: bold; 
+            text-shadow: 0 0 10px #00ffff; 
+            text-align: center; 
+            margin-bottom: 20px;
+        }
+        
+        .status-text {
+            font-size: 18px; 
+            color: #ff00ff; 
+            text-shadow: 0 0 10px #ff00ff;
+            margin-top: 10px;
+            animation: pulse 1s infinite alternate;
+        }
+
+        /* 画布自带发光效果 */
+        canvas {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            /* 确保实际渲染分辨率和显示尺寸一致 */
+            width: 400px;
+            height: 400px;
+        }
+
+        .hint { 
+            color: #aaa; 
+            margin-top: 25px; 
+            font-size: 16px; 
+            letter-spacing: 1px; 
+            text-shadow: 0 0 5px #000;
+        }
+        .highlight { color: #ff00ff; font-weight: bold; }
+
+        @keyframes pulse { 
+            from { opacity: 0.6; } 
+            to { opacity: 1; } 
+        }
+    </style>
+</head>
+<body>
+    <div class="glitch">STAGE 04: 4x4 滑块拼图<br><div class="status-text" id="status">[ 正在加载引擎与素材... ]</div></div>
+    
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    
+    <div class="hint">使用 <span class="highlight">W A S D</span> 移动光标，按 <span class="highlight">拍 (Space)</span> 移动滑块</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+
+        // ================= 【素材加载引擎】 =================
+        const img = new Image();
+        img.src = '57f0d4aef1750e7e4b1cf6372427bf8e.jpg';
+        let imgLoaded = false;
+        
+        img.onload = () => { imgLoaded = true; };
+        img.onerror = () => { 
+            console.warn("图片未找到，引擎将启用备用数字模式。");
+            imgLoaded = false; 
+        };
+
+        // ================= 【游戏状态机】 =================
+        // 网格长度 16。grid[当前位置] = 目标拼图编号
+        // 0 号代表空缺（左上角）
+        let grid = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        
+        // 存储每个滑块的物理位置（用于丝滑动画 Lerp 计算）
+        let tiles = {};
+        for (let i = 1; i <= 15; i++) {
+            let col = i % 4;
+            let row = Math.floor(i / 4);
+            tiles[i] = { 
+                origCol: col, origRow: row, // 原始图像切割坐标
+                x: col * 100, y: row * 100, // 当前真实渲染坐标
+                tx: col * 100, ty: row * 100  // 目标前往坐标
+            };
+        }
+
+        let isSystemAnimating = true;
+        let isGameCleared = false;
+        
+        // 玩家光标的逻辑位置与真实渲染位置（加入物理惯性）
+        let cursorIndex = 0;
+        let cursorVisual = { x: 0, y: 0 };
+
+        // ================= 【渲染引擎】 =================
+        function draw() {
+            // 清理上一帧
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制滑块
+            for (let i = 1; i <= 15; i++) {
+                let t = tiles[i];
+                
+                // 缓动数学逻辑 (Lerp)，让移动如丝般顺滑
+                t.x += (t.tx - t.x) * 0.25;
+                t.y += (t.ty - t.y) * 0.25;
+
+                // 绘制底层或图片
+                if (imgLoaded) {
+                    // ctx.drawImage(图片, 裁剪X, 裁剪Y, 裁宽, 裁高, 放置X, 放置Y, 放宽, 放高)
+                    ctx.drawImage(img, t.origCol * 100, t.origRow * 100, 100, 100, t.x, t.y, 100, 100);
+                } else {
+                    ctx.fillStyle = "#1a1a3a";
+                    ctx.fillRect(t.x, t.y, 100, 100);
+                }
+
+                // 滑块边框与内部阴影
+                ctx.strokeStyle = "rgba(0, 255, 255, 0.4)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(t.x, t.y, 100, 100);
+
+                // 左上角的安全后备数字
+                ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+                ctx.font = "bold 18px monospace";
+                ctx.shadowColor = "#000";
+                ctx.shadowBlur = 4;
+                ctx.fillText(i, t.x + 8, t.y + 22);
+                ctx.shadowBlur = 0;
+            }
+
+            // 绘制玩家高亮光标 (不在胜利时显示)
+            if (!isGameCleared) {
+                let targetCursorX = (cursorIndex % 4) * 100;
+                let targetCursorY = Math.floor(cursorIndex / 4) * 100;
+                
+                cursorVisual.x += (targetCursorX - cursorVisual.x) * 0.3;
+                cursorVisual.y += (targetCursorY - cursorVisual.y) * 0.3;
+
+                ctx.strokeStyle = "#ff00ff";
+                ctx.lineWidth = 4;
+                ctx.shadowColor = "#ff00ff";
+                ctx.shadowBlur = 15;
+                ctx.strokeRect(cursorVisual.x + 2, cursorVisual.y + 2, 96, 96);
+                ctx.shadowBlur = 0;
+            }
+
+            // 引擎循环执行
+            requestAnimationFrame(draw);
+        }
+
+        // ================= 【系统逻辑】 =================
+        function moveCursor(dr, dc) {
+            if (isSystemAnimating || isGameCleared) return;
+            let r = Math.floor(cursorIndex / 4) + dr;
+            let c = (cursorIndex % 4) + dc;
+            
+            // 确保不越界
+            if (r >= 0 && r <= 3 && c >= 0 && c <= 3) {
+                cursorIndex = r * 4 + c;
+            }
+        }
+
+        function checkWin() {
+            // 校验 grid 是否已经变为 [0, 1, 2 ... 15]
+            let win = grid.every((val, index) => val === index);
+            if (win) {
+                isSystemAnimating = true; 
+                isGameCleared = true;
+                statusEl.innerText = "[ 图像还原成功！拍(Space) 继续 ]";
+                statusEl.style.color = "#00ff00";
+                statusEl.style.textShadow = "0 0 10px #00ff00";
+                canvas.style.borderColor = "#00ff00";
+            }
+        }
+
+        function handleAction() {
+            if (isGameCleared) {
+                window.parent.postMessage("STAGE_CLEAR", "*"); 
+                return;
+            }
+            if (isSystemAnimating) return;
+
+            let emptyIndex = grid.indexOf(0);
+            
+            let r1 = Math.floor(cursorIndex / 4);
+            let c1 = cursorIndex % 4;
+            let r2 = Math.floor(emptyIndex / 4);
+            let c2 = emptyIndex % 4;
+
+            // 曼哈顿距离为1代表上下左右相邻
+            if (Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1) {
+                // 逻辑交换
+                let tileId = grid[cursorIndex];
+                grid[emptyIndex] = tileId;
+                grid[cursorIndex] = 0;
+                
+                // 物理目标坐标更新 (交给引擎去补间动画)
+                tiles[tileId].tx = (emptyIndex % 4) * 100;
+                tiles[tileId].ty = Math.floor(emptyIndex / 4) * 100;
+                
+                checkWin();
+            }
+        }
+
+        // ================= 【乱序系统】 =================
+        const fixedShufflePath = [
+            1, 5, 4, 8, 9, 10, 6, 2, 3, 7, 11, 15, 14, 13, 12, 
+            8, 9, 5, 1, 0, 4, 8, 12, 13, 14, 10, 6, 7, 11, 15, 
+            14, 10, 9, 5, 4, 0, 1, 2, 6, 10, 9, 8, 12, 13, 14, 15
+        ];
+        
+        let shuffleStep = 0;
+        function doShuffle() {
+            if (shuffleStep === 0) {
+                statusEl.innerText = "[ 系统已接管：正在注入乱序协议... ]";
+            }
+            
+            if (shuffleStep < fixedShufflePath.length) {
+                let nextEmptyPos = fixedShufflePath[shuffleStep];
+                let currentEmptyPos = grid.indexOf(0);
+
+                // 后台迅速交换
+                let tileId = grid[nextEmptyPos];
+                grid[currentEmptyPos] = tileId;
+                grid[nextEmptyPos] = 0;
+                
+                // 设置动画目标点
+                tiles[tileId].tx = (currentEmptyPos % 4) * 100;
+                tiles[tileId].ty = Math.floor(currentEmptyPos / 4) * 100;
+
+                shuffleStep++;
+                // 定时器控制引擎打乱的速度 (60毫秒滑一下)
+                setTimeout(doShuffle, 60); 
+            } else {
+                // 乱序结束，解锁玩家控制
+                isSystemAnimating = false;
+                statusEl.innerText = "[ 乱序完毕：等待手动复位 ]";
+            }
+        }
+
+        // ================= 【输入监听】 =================
+        window.addEventListener("message", (event) => {
+            if (event.data.type === "DIR_KEYDOWN") {
+                if (event.data.key === "dir-left") moveCursor(0, -1);
+                if (event.data.key === "dir-right") moveCursor(0, 1);
+                if (event.data.key === "dir-up") moveCursor(-1, 0);
+                if (event.data.key === "dir-down") moveCursor(1, 0);
+            } else if (event.data === "TRIGGER_RELEASE") {
+                handleAction(); 
+            }
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") moveCursor(-1, 0);
+            else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") moveCursor(1, 0);
+            else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") moveCursor(0, -1);
+            else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") moveCursor(0, 1);
+            else if (e.code === "Space" || e.code === "Enter") { 
+                e.preventDefault(); 
+                handleAction(); 
+            }
+        }, false);
+
+        // 启动引擎渲染循环
+        requestAnimationFrame(draw);
+        
+        // 延迟1秒后开始打乱动画，让玩家看一眼原图
+        setTimeout(doShuffle, 1000);
+    </script>
+</body>
+</html>

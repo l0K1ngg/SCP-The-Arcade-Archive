@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>愿望打砖块 - 纯正霓虹版</title>
+    <style>
+        @font-face { font-family: 'Fusion Pixel'; src: url('./fusion-pixel.woff2') format('woff2'); }
+        
+        body { 
+            margin: 0; 
+            padding: 0;
+            /* 动态霓虹渐变底色 */
+            background: linear-gradient(135deg, #0a0518, #1a0b2e, #020105, #0f172a);
+            background-size: 400% 400%;
+            animation: neonGradient 12s ease infinite;
+            color: #fff; 
+            font-family: 'Fusion Pixel', monospace; 
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            user-select: none;
+        }
+
+        /* 全局 CSS 赛博网格层 */
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 0, 255, 0.08) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none; /* 防止遮挡 Canvas 点击 */
+            z-index: -1;
+        }
+
+        @keyframes neonGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            box-sizing: border-box;
+            background: transparent; 
+        }
+
+        #start-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            text-shadow: 0 0 10px #00ffff;
+            animation: blink 1s infinite alternate;
+            pointer-events: none;
+        }
+        
+        .title { font-size: 32px; color: #ff00ff; text-shadow: 0 0 15px #ff00ff; margin-bottom: 10px; }
+        .subtitle { font-size: 18px; color: #00ffff; }
+
+        @keyframes blink { from { opacity: 0.5; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div id="start-overlay">
+        <div class="title" id="overlay-title">STAGE 02: 打砖块</div>
+        <div class="subtitle" id="overlay-subtitle">拍打 或 按 Space 发射弹珠</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // 核心状态
+        let isPlaying = false;
+        let isGameCleared = false;
+        let isGameOver = false;
+
+        let score = 0;
+        let lives = 3;
+        let totalBricks = 0;
+
+        // 【物理边缘定义】光墙的真实厚度
+        const wallThickness = 8;
+
+        // 极度休闲的龟速弹珠
+        const ballRadius = 8;
+        const baseSpeedX = 1.1;  
+        const baseSpeedY = -1.1; 
+        let dx = 0; 
+        let dy = 0;
+        let ballColor = "#ffffff";
+        let x = canvas.width / 2;
+        let y = canvas.height - 50;
+
+        const paddleHeight = 16;
+        const paddleWidth = 120; 
+        let paddleX = (canvas.width - paddleWidth) / 2;
+        const paddleSpeed = 4.5; 
+
+        // ==================== 【关卡矩阵：精简版特殊高荧光 PEAR】 ====================
+        const levelPattern = [
+            [0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0], 
+            [1,1,1,4,  1,1,1,4,  1,1,1,4,  1,1,1], 
+            [1,4,1,4,  1,4,4,4,  1,4,1,4,  1,4,1], 
+            [2,2,2,4,  2,2,2,4,  2,2,2,4,  2,2,4], 
+            [3,4,4,4,  3,4,4,4,  3,4,3,4,  3,4,3], 
+            [3,4,4,4,  3,3,3,4,  3,4,3,4,  3,4,3], 
+            [0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0]  
+        ];
+        
+        // 更新配色方案：4 号砖块变为蓝色系霓虹
+        const colorMap = {
+            1: { fill: "#ffff00", shadow: "#ffff00" }, 
+            2: { fill: "#ffea00", shadow: "#ffea00" }, 
+            3: { fill: "#ffc107", shadow: "#ffc107" }, 
+            4: { fill: "rgba(0, 128, 255, 0.2)", shadow: "#0088ff" } // 半透明蓝色底色，配高亮蓝色阴影
+        };
+
+        const brickRowCount = levelPattern.length;
+        const brickColumnCount = levelPattern[0].length;
+        const brickPadding = 4;
+        
+        const brickOffsetTop = 130; 
+        const playAreaWidth = canvas.width - (wallThickness * 2);
+        const brickOffsetLeft = wallThickness + 40;
+        const brickWidth = (playAreaWidth - 80 - (brickColumnCount - 1) * brickPadding) / brickColumnCount;
+        const brickHeight = 22;
+
+        let bricks = [];
+
+        function initBricks() {
+            bricks = [];
+            totalBricks = 0;
+            score = 0;
+            for (let c = 0; c < brickColumnCount; c++) {
+                bricks[c] = [];
+                for (let r = 0; r < brickRowCount; r++) {
+                    let type = levelPattern[r][c];
+                    if (type !== 0) totalBricks++;
+                    bricks[c][r] = { x: 0, y: 0, status: type, theme: colorMap[type] };
+                }
+            }
+        }
+
+        function resetBallAndPaddle() {
+            isPlaying = false;
+            paddleX = (canvas.width - paddleWidth) / 2;
+            x = paddleX + paddleWidth / 2;
+            y = canvas.height - paddleHeight - ballRadius - 15;
+            dx = 0;
+            dy = 0;
+        }
+
+        function resetFullGame() {
+            isGameOver = false;
+            isGameCleared = false;
+            lives = 3;
+            initBricks();
+            resetBallAndPaddle();
+            document.getElementById("start-overlay").style.display = "block";
+            document.getElementById("overlay-title").innerText = "霓虹打砖块";
+            document.getElementById("overlay-subtitle").innerText = "按 拍(Space) 发射弹珠";
+            document.getElementById("overlay-title").style.color = "#ff00ff";
+        }
+
+        initBricks();
+        resetBallAndPaddle();
+
+        let rightPressed = false;
+        let leftPressed = false;
+
+        // ==================== 【输入控制】 ====================
+        window.addEventListener("message", (event) => {
+            if (event.data.type === "DIR_KEYDOWN") {
+                if (event.data.key === "dir-left") leftPressed = true;
+                if (event.data.key === "dir-right") rightPressed = true;
+            } else if (event.data.type === "DIR_KEYUP") {
+                if (event.data.key === "dir-left") leftPressed = false;
+                if (event.data.key === "dir-right") rightPressed = false;
+            } else if (event.data === "TRIGGER_RELEASE") {
+                handleAction(); 
+            }
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Right" || e.key === "ArrowRight" || e.code === "KeyD") rightPressed = true;
+            else if (e.key === "Left" || e.key === "ArrowLeft" || e.code === "KeyA") leftPressed = true;
+            else if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); handleAction(); }
+        }, false);
+
+        document.addEventListener("keyup", (e) => {
+            if (e.key === "Right" || e.key === "ArrowRight" || e.code === "KeyD") rightPressed = false;
+            else if (e.key === "Left" || e.key === "ArrowLeft" || e.code === "KeyA") leftPressed = false;
+        }, false);
+
+        function handleAction() {
+            if (isGameOver) {
+                resetFullGame();
+            } else if (!isPlaying && !isGameCleared) {
+                isPlaying = true;
+                dx = baseSpeedX * (Math.random() > 0.5 ? 1 : -1); 
+                dy = baseSpeedY;
+                document.getElementById("start-overlay").style.display = "none";
+            }
+        }
+
+        // ==================== 【物理碰撞】 ====================
+        function collisionDetection() {
+            let hitRegistered = false; 
+
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    const b = bricks[c][r];
+                    if (b.status > 0) {
+                        if (x + ballRadius > b.x && x - ballRadius < b.x + brickWidth && 
+                            y + ballRadius > b.y && y - ballRadius < b.y + brickHeight) {
+                            
+                            if (hitRegistered) continue; 
+                            
+                            let overlapLeft = (x + ballRadius) - b.x;
+                            let overlapRight = (b.x + brickWidth) - (x - ballRadius);
+                            let overlapTop = (y + ballRadius) - b.y;
+                            let overlapBottom = (b.y + brickHeight) - (y - ballRadius);
+                            
+                            let minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+                            
+                            if (minOverlap === overlapLeft || minOverlap === overlapRight) dx = -dx; 
+                            else dy = -dy; 
+
+                            b.status = 0; 
+                            score++;
+                            hitRegistered = true;
+                            
+                            if(score % 20 === 0) {
+                                dx = dx > 0 ? dx + 0.1 : dx - 0.1;
+                                dy = dy > 0 ? dy + 0.1 : dy - 0.1;
+                            }
+
+                            if (score === totalBricks) {
+                                isGameCleared = true;
+                                isPlaying = false;
+                                window.parent.postMessage("STAGE_CLEAR", "*");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==================== 【渲染绘制引擎】 ====================
+        function drawPhysicalWalls() {
+            ctx.beginPath();
+            ctx.moveTo(wallThickness / 2, canvas.height);
+            ctx.lineTo(wallThickness / 2, wallThickness / 2);
+            ctx.lineTo(canvas.width - wallThickness / 2, wallThickness / 2);
+            ctx.lineTo(canvas.width - wallThickness / 2, canvas.height);
+            
+            ctx.lineWidth = wallThickness;
+            ctx.strokeStyle = "#00ffff"; 
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = "#00ffff"; 
+            ctx.stroke();
+            ctx.closePath();
+            
+            ctx.beginPath();
+            ctx.moveTo(wallThickness / 2, canvas.height);
+            ctx.lineTo(wallThickness / 2, wallThickness / 2);
+            ctx.lineTo(canvas.width - wallThickness / 2, wallThickness / 2);
+            ctx.lineTo(canvas.width - wallThickness / 2, canvas.height);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#ffffff";
+            ctx.shadowBlur = 0;
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+            ctx.fillStyle = ballColor;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "#ffffff"; 
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPaddle() {
+            ctx.beginPath();
+            ctx.rect(paddleX, canvas.height - paddleHeight - 15, paddleWidth, paddleHeight);
+            ctx.fillStyle = "#ff00ff"; 
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = "#ff00ff";
+            ctx.fill();
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBricks() {
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    if (bricks[c][r].status > 0) {
+                        const brickX = (c * (brickWidth + brickPadding)) + brickOffsetLeft;
+                        const brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+                        bricks[c][r].x = brickX;
+                        bricks[c][r].y = brickY;
+                        
+                        ctx.beginPath();
+                        ctx.rect(brickX, brickY, brickWidth, brickHeight);
+                        ctx.fillStyle = bricks[c][r].theme.fill;
+                        
+                        ctx.shadowBlur = 15; 
+                        ctx.shadowColor = bricks[c][r].theme.shadow;
+                        ctx.fill();
+                        
+                        // 为蓝色的暗色砖块加上明亮的蓝色边框
+                        if (bricks[c][r].status === 4) {
+                            ctx.strokeStyle = "rgba(0, 170, 255, 0.9)"; 
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                        
+                        ctx.closePath();
+                        ctx.shadowBlur = 0;
+                    }
+                }
+            }
+        }
+
+        function drawHUD() {
+            ctx.font = "20px 'Fusion Pixel', monospace";
+            ctx.fillStyle = "#00ffff";
+            ctx.fillText("SCORE: " + score, wallThickness + 20, 40);
+            
+            ctx.fillStyle = "#ff00ff"; 
+            let lifeStr = "LIVES: ";
+            for(let i=0; i<lives; i++) { lifeStr += "♥ "; }
+            ctx.textAlign = "right";
+            ctx.fillText(lifeStr, canvas.width - wallThickness - 20, 40);
+            ctx.textAlign = "left"; 
+        }
+
+        // ==================== 【主游戏循环】 ====================
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawPhysicalWalls();
+
+            if (isGameCleared) {
+                ctx.font = "40px 'Fusion Pixel', monospace";
+                ctx.fillStyle = "#ffff00";
+                ctx.textAlign = "center";
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "#ffff00";
+                ctx.fillText("STAGE CLEAR!", canvas.width/2, canvas.height/2);
+                ctx.shadowBlur = 0;
+                return;
+            }
+
+            drawBricks();
+            drawPaddle();
+            drawHUD();
+            drawBall();
+
+            if (isPlaying) {
+                collisionDetection();
+
+                if (x + dx > canvas.width - ballRadius - wallThickness || x + dx < ballRadius + wallThickness) {
+                    dx = -dx;
+                }
+                if (y + dy < ballRadius + wallThickness) {
+                    dy = -dy; 
+                }
+                else if (y + dy > canvas.height - ballRadius - paddleHeight - 15) {
+                    if (x > paddleX - ballRadius && x < paddleX + paddleWidth + ballRadius) {
+                        dy = -Math.abs(dy); 
+                        let hitPoint = x - (paddleX + paddleWidth / 2);
+                        dx = hitPoint * 0.04; 
+                        
+                        let currentSpeed = Math.sqrt(dx*dx + dy*dy);
+                        let baseSpeed = Math.sqrt(baseSpeedX*baseSpeedX + baseSpeedY*baseSpeedY);
+                        let targetSpeed = baseSpeed + Math.floor(score/20) * 0.14; 
+                        
+                        dx = (dx / currentSpeed) * targetSpeed;
+                        dy = (dy / currentSpeed) * targetSpeed;
+                        
+                        y = canvas.height - ballRadius - paddleHeight - 16;
+                    } 
+                    else if (y + dy > canvas.height) {
+                        lives--;
+                        if (lives <= 0) {
+                            isGameOver = true;
+                            isPlaying = false;
+                            document.getElementById("start-overlay").style.display = "block";
+                            document.getElementById("overlay-title").innerText = "GAME OVER";
+                            document.getElementById("overlay-title").style.color = "#ff0000";
+                            document.getElementById("overlay-subtitle").innerText = "拍打 或 按 Space 重新挑战";
+                        } else {
+                            resetBallAndPaddle();
+                            document.getElementById("start-overlay").style.display = "block";
+                            document.getElementById("overlay-title").innerText = "MISS! 剩余生命: " + lives;
+                            document.getElementById("overlay-title").style.color = "#ff00ffff";
+                            document.getElementById("overlay-subtitle").innerText = "拍打 或 按 Space 继续";
+                        }
+                    }
+                }
+
+                x += dx;
+                y += dy;
+            } else {
+                x = paddleX + paddleWidth / 2;
+                y = canvas.height - paddleHeight - ballRadius - 15;
+            }
+
+            if (rightPressed && paddleX < canvas.width - paddleWidth - wallThickness) paddleX += paddleSpeed;
+            else if (leftPressed && paddleX > wallThickness) paddleX -= paddleSpeed;
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>

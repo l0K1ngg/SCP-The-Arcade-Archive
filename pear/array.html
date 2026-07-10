@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深空监控阵列 // 观测席（凭证代授）</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; cursor: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background-color: #05080f; font-family: "Courier New", Courier, monospace; color: #b9c2d0; user-select: none; }
+
+        #crosshair { position: fixed; width: 30px; height: 30px; border: 1px solid rgba(185,194,208,0.45); border-radius: 50%; pointer-events: none; z-index: 10000; transform: translate(-50%, -50%); transition: width 0.1s, height 0.1s; display: flex; justify-content: center; align-items: center; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #b9c2d0; }
+        #crosshair::before { width: 4px; height: 1px; }
+        #crosshair::after { width: 1px; height: 4px; }
+        .crosshair-active { width: 40px !important; height: 40px !important; border-color: #dc2626 !important; background: rgba(220, 38, 38, 0.12); }
+
+        .scanlines { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%); background-size: 100% 4px; z-index: 9998; pointer-events: none; }
+        .vignette { position: fixed; top:0; left:0; width:100vw; height:100vh; z-index: 9996; pointer-events:none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%); }
+        .flicker { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(148,163,184,0.015); z-index: 9997; pointer-events: none; animation: crt-flicker 0.15s infinite; }
+        @keyframes crt-flicker { 0% { opacity: 0.8; } 100% { opacity: 1; } }
+
+        #boot-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #030509; color: #d4d8e0; z-index: 900; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 2.5s ease; }
+        .boot-logo { margin-bottom: 40px; opacity: 0.85; filter: invert(0.9); width: 140px; height: 140px; }
+        #auth-btn { background: transparent; border: 1px solid #dc2626; color: #ef4444; padding: 18px 45px; font-family: monospace; font-size: 17px; font-weight: 700; letter-spacing: 3px; transition: all 0.2s; text-transform: uppercase; margin-top: 20px; }
+        #auth-btn:hover { background: #dc2626; color: #05080f; box-shadow: 0 0 35px rgba(220, 38, 38, 0.55); }
+        .briefing-box { width: 85%; max-width: 800px; line-height: 2.2; font-size: 14.5px; display: none; margin-top: 30px; color: #aeb7c6; }
+
+        #canvas3d { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background: radial-gradient(circle at 50% 42%, #0b1322 0%, #05080f 72%); opacity: 0; transition: opacity 3s cubic-bezier(0.25, 1, 0.5, 1); }
+        .grid-bg { position: absolute; width: 100%; height: 100%; z-index: 0; pointer-events: none; background-image: linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px); background-size: 50px 50px; opacity: 0; transition: opacity 3s ease; }
+
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; opacity: 0; transition: opacity 2s ease; }
+        .interactive { pointer-events: auto; }
+
+        .hud-header { padding: 18px 30px; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 700; letter-spacing: 1.5px; width: 100%; border-bottom: 1px solid rgba(220,38,38,0.55); background: rgba(5,9,16,0.88); backdrop-filter: blur(2px); color: #cbd3e0; }
+        .hud-logo-area { display: flex; align-items: center; gap: 15px; }
+        .hud-logo-area img { width: 42px; height: 42px; filter: invert(0.88); opacity: 0.9; }
+
+        .info-panel { position: absolute; right: 40px; top: 120px; width: 430px; background: rgba(8,13,23,0.96); border: 1px solid #334155; border-top: 3px solid #dc2626; padding: 32px 35px; box-shadow: 0 0 45px rgba(0,0,0,0.7), 0 0 22px rgba(220,38,38,0.08); transition: all 0.4s ease; opacity: 0; transform: translateX(20px); }
+        .info-panel.visible { opacity: 1; transform: translateX(0); }
+        .info-title { font-size: 19px; color: #e5e9f0; font-weight: 900; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .info-desc { font-size: 13.5px; line-height: 2; color: #aeb7c6; text-align: justify; margin-bottom: 25px; min-height: 110px; }
+        .info-stats { font-size: 12.5px; color: #cbd3e0; background: rgba(15,23,38,0.9); padding: 16px 18px; border-left: 3px solid #dc2626; line-height: 1.9; min-height: 80px; white-space: pre-line; }
+
+        .redacted { background-color: #000; color: #000; padding: 0 6px; margin: 0 3px; display: inline-block; user-select: none; outline: 1px solid #2c3547; }
+        .warning-text { color: #ef4444; font-weight: 900; text-shadow: 0 0 12px rgba(239,68,68,0.45); }
+        .blink-cursor { display: inline-block; width: 9px; height: 16px; background: #b9c2d0; animation: blink 1.2s step-end infinite; vertical-align: bottom; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        #request-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #05080f; z-index: 100; display: none; flex-direction: column; justify-content: center; align-items: center; transition: opacity 2s ease; }
+        .request-box { width: 90%; max-width: 750px; border: 1px solid #475569; border-top: 4px solid #dc2626; background: rgba(8,13,23,0.97); padding: 60px; box-shadow: 0 0 70px rgba(0,0,0,0.85); position: relative; }
+        .request-logo { position: absolute; top: -52px; left: 50%; transform: translateX(-50%); background: #05080f; padding: 0 25px; }
+        .request-logo img { width: 96px; height: 96px; filter: invert(0.88); opacity: 0.9; }
+        .request-log { font-size: 14.5px; color: #c3cad8; line-height: 2.2; margin-top: 40px; margin-bottom: 45px; font-weight: 700; }
+        .request-btn { background: transparent; border: 1px solid #dc2626; color: #ef4444; padding: 20px 35px; font-family: monospace; font-size: 15px; transition: all 0.3s; width: 100%; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; }
+        .request-btn:hover { background: #dc2626; color: #05080f; box-shadow: 0 0 30px rgba(220,38,38,0.5); }
+
+        #hologram-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #05080f; z-index: 200; display: none; flex-direction: column; justify-content: center; align-items: center; background-image: radial-gradient(rgba(148,163,184,0.14) 1px, transparent 1px); background-size: 40px 40px; }
+        .box-stage { width: 280px; height: 280px; position: relative; perspective: 1200px; margin-bottom: 60px; }
+        .box-container { width: 100%; height: 100%; position: absolute; transform-style: preserve-3d; transform: rotateX(-20deg) rotateY(35deg); }
+
+        .terminal-ui { width: 90%; max-width: 700px; background: rgba(8,13,23,0.97); border: 1px solid #475569; border-left: 4px solid #dc2626; padding: 50px; box-shadow: 0 0 60px rgba(0,0,0,0.8); z-index: 210; position: relative; }
+        .terminal-logo { position: absolute; right: 40px; top: 40px; opacity: 0.06; pointer-events: none; }
+        .terminal-logo img { width: 140px; height: 140px; filter: invert(0.9); }
+        .input-line { display: flex; align-items: center; border-bottom: 1px solid #64748b; padding-bottom: 10px; margin-top: 40px; width: 85%; }
+        .terminal-input { background: transparent; border: none; color: #e5e9f0; font-family: inherit; font-size: 22px; flex-grow: 1; outline: none; letter-spacing: 6px; font-weight: 900; text-transform: uppercase; cursor: none; }
+        .terminal-input::placeholder { color: #475569; font-size: 15px; letter-spacing: 2px; font-weight: 400; }
+        .countdown-display { font-size: 24px; font-weight: 900; color: #ef4444; margin-top: 25px; text-align: left; letter-spacing: 2px; display: none; text-shadow: 0 0 15px rgba(239,68,68,0.4); }
+
+        #kill-agent { position: fixed; top:0; left:0; width:100%; height:100%; background: radial-gradient(circle, #dc2626 0%, #7f1d1d 50%, #450a0a 100%); z-index: 950; display: none; justify-content: center; align-items: center; flex-direction: column; }
+        .kill-spiral { width: 200px; height: 200px; border: 10px dashed #000; border-radius: 50%; animation: spin 0.5s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        #glitch-strike { position: fixed; top:0; left:0; width:100%; height:100%; background: #000; z-index: 800; display: none; pointer-events: none; }
+        #flashbang { position: fixed; top:0; left:0; width:100%; height:100%; background: #fff; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 4s cubic-bezier(0.16, 1, 0.3, 1); }
+    </style>
+</head>
+<body>
+
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+    <div class="flicker"></div>
+    <div id="crosshair"></div>
+    <div id="flashbang"></div>
+    <div id="glitch-strike"></div>
+    
+    <div id="kill-agent">
+        <div class="kill-spiral"></div>
+        <h1 style="color:#000; margin-top:30px; font-size:40px; font-weight:900;">模因过滤剂已注入</h1>
+    </div>
+    
+    <div id="boot-screen">
+        <img src="scp.svg" class="boot-logo" alt="SCP Logo" onerror="this.style.display='none'">
+        <button id="auth-btn" class="interactive">[ 以遗留凭证接入：深空监控阵列 ]</button>
+        <div class="briefing-box" id="briefingBox"></div>
+    </div>
+
+    <div class="grid-bg" id="gridBg"></div>
+    <canvas id="canvas3d"></canvas>
+
+    <div class="ui-layer" id="mainUi">
+        <div class="hud-header">
+            <div class="hud-logo-area">
+                <img src="scp.svg" alt="SCP Logo" onerror="this.style.display='none'">
+                <span>深空监控阵列 // 内太阳系扇区 · 观测席-01</span>
+            </div>
+            <div style="text-align: right; color: #52525b;">
+                凭证状态: 休眠 → 已激活<br>
+                待复核事项: 1 项（挂起于 1991 年）
+            </div>
+        </div>
+
+        <div class="info-panel interactive" id="infoPanel">
+            <div class="info-title" id="objName">等待操作员指令</div>
+            <div class="info-desc" id="objDesc">观测通道已建立。<br>请选定天体目标。系统将自动比对其历史扫描存档。<br><br><span style="color:#64748b;">// 拖拽旋转视角，滚轮调整观测距离</span></div>
+            <div class="info-stats" id="objStats"></div>
+        </div>
+    </div>
+
+    <div id="request-screen" class="interactive">
+        <div class="request-box">
+            <div class="request-logo">
+                <img src="scp.svg" alt="SCP Logo" onerror="this.style.display='none'">
+            </div>
+            <div class="request-log" id="requestLog"></div>
+            <button class="request-btn" id="confirmPrintBtn" style="display:none;">[ 紧急授权：构筑实体收容舱并剥离目标 ]</button>
+        </div>
+    </div>
+
+    <div id="hologram-screen" class="interactive">
+        <div class="box-stage">
+            <div class="box-container" id="printingBox"></div>
+        </div>
+
+        <div class="terminal-ui">
+            <div class="terminal-logo">
+                <img src="scp.svg" alt="SCP Logo" onerror="this.style.display='none'">
+            </div>
+            <div style="color:#e5e9f0; font-weight:900; font-size:21px; margin-bottom:20px; border-bottom: 1px solid #475569; padding-bottom:12px; letter-spacing:1px;">[收容协议 8708-A 生效] 载荷已完成三维封装</div>
+            <div style="font-size:14px; color:#aeb7c6; line-height:2;" id="holoLog">
+                > 封装完成。舱内读数平稳，无衰减。<br>
+                > 封条解析：外层的反模因封条需要一段字符序列方可解除。序列未随载荷送达。<br>
+                > 溯源比对：封条纹路与 1991 年一次收容事故的现场遗留物同源。<br>
+                > 序列录入通道已开启。
+            </div>
+            
+            <div class="input-line">
+                <span style="color:#ef4444; font-size:15px; margin-right:15px; font-weight:900;">MEMETIC_KEY ></span>
+                <input type="text" id="passInput" class="terminal-input" placeholder="输入反模因密钥..." autocomplete="off" maxlength="10">
+            </div>
+            
+
+            
+            <div id="alertMsg" style="color:#ef4444; font-size:13.5px; margin-top:20px; display:none; font-weight:900;">[HOLD] 序列核验通过。载荷进入待交付状态。</div>
+            <div class="countdown-display" id="countdown">00D : 00H : 00M : 00S : 000MS</div>
+        </div>
+    </div>
+
+    <script>
+        const crosshair = document.getElementById('crosshair');
+        document.addEventListener('mousemove', (e) => {
+            crosshair.style.left = e.clientX + 'px';
+            crosshair.style.top = e.clientY + 'px';
+        });
+
+        let audioCtx = null;
+        function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        
+        function playTone(freq, duration, type = 'sine', volume = 0.04) {
+            try {
+                if(!audioCtx) return;
+                const osc = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
+                osc.type = type; osc.frequency.value = freq;
+                gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+                osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e){}
+        }
+
+        function playTypeSound() { playTone(120 + Math.random()*30, 0.05, 'square', 0.02); }
+        function playKeystroke() { playTone(800 + Math.random()*200, 0.02, 'sine', 0.03); }
+        function playRedactSound() { playTone(50, 0.3, 'sawtooth', 0.15); } 
+        function playStrikeSound() { playTone(80, 0.1, 'sawtooth', 0.3); setTimeout(()=>playTone(60, 0.3, 'square', 0.3), 100); }
+
+        const briefingLines = [
+            "> 凭证受理中……受理完成。",
+            "> 凭证注册日期：1991-██-██。启用记录：0 次。",
+            "> 凭证注册人：█████。人事状态标记：<span class='redacted'>████</span>（存疑）。",
+            "> 规程校验：不通过。",
+            "> 接入状态：已放行。放行依据：<span class='redacted'>████</span>（无对应记录）。",
+            "> --------------------------------------------------",
+            "> 正在同步自动观测日志（1991-██-██ 至今）……完成。共 12,782 次例行扫描，其中 12,781 次无异常。",
+            "> 待复核事项（1/1）：主小行星带编号 MBP-3247 天体。",
+            "> 备注：该天体在全部历史扫描中的反照率、质量与轨道参数逐位一致，精确至第九位小数。「待复核」标记每年自动续期一次，从未有人复核。",
+            "> 操作规程：仅限记录。请避免长时间定向观测。",
+            "> [ 正在载入拓扑渲染引擎... ]"
+        ];
+
+        document.getElementById('auth-btn').addEventListener('click', async function() {
+            initAudio(); this.style.display = 'none';
+            
+            const ka = document.getElementById('kill-agent');
+            ka.style.display = 'flex'; playTone(150, 0.5, 'sawtooth', 0.2);
+            await new Promise(r => setTimeout(r, 600));
+            ka.style.display = 'none'; playTone(800, 0.2, 'sine', 0.05);
+            
+            const bBox = document.getElementById('briefingBox'); bBox.style.display = 'block';
+            
+            for(let line of briefingLines) {
+                playTone(200, 0.06, 'square', 0.02);
+                bBox.innerHTML += line + "<br><br>";
+                await new Promise(r => setTimeout(r, 1200)); 
+            }
+
+            setTimeout(() => {
+                document.getElementById('boot-screen').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('boot-screen').style.display = 'none';
+                    document.getElementById('canvas3d').style.opacity = '1';
+                    document.getElementById('gridBg').style.opacity = '0.35';
+                    document.getElementById('mainUi').style.opacity = '1';
+                    drawEngine(); 
+                }, 2000);
+            }, 1800);
+        });
+
+        class Matrix4 {
+            constructor() { this.elements = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+            static makeRotationX(a) { const m = new Matrix4(); const c = Math.cos(a), s = Math.sin(a); m.elements[5] = c; m.elements[6] = -s; m.elements[9] = s; m.elements[10] = c; return m; }
+            static makeRotationY(a) { const m = new Matrix4(); const c = Math.cos(a), s = Math.sin(a); m.elements[0] = c; m.elements[2] = s; m.elements[8] = -s; m.elements[10] = c; return m; }
+            multiply(b) {
+                const ae = this.elements; const be = b.elements; const te = new Float32Array(16);
+                for (let i = 0; i < 4; i++) { for (let j = 0; j < 4; j++) { te[i*4+j] = ae[i*4+0]*be[0*4+j] + ae[i*4+1]*be[1*4+j] + ae[i*4+2]*be[2*4+j] + ae[i*4+3]*be[3*4+j]; } }
+                this.elements = te; return this;
+            }
+            transformPoint(x, y, z) { return { x: this.elements[0]*x + this.elements[1]*y + this.elements[2]*z + this.elements[3], y: this.elements[4]*x + this.elements[5]*y + this.elements[6]*z + this.elements[7], z: this.elements[8]*x + this.elements[9]*y + this.elements[10]*z + this.elements[11] }; }
+        }
+
+        const canvas = document.getElementById('canvas3d'); const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth; let height = canvas.height = window.innerHeight;
+        let zoom = 850; let angleX = 0.8, angleY = 0; let planetSelfRotation = 0;
+
+        const solarObjects = [
+            { id: "sun", name: "恒星-Sol", desc: "引力主导天体。表面核聚变稳定，未检测到现实扭曲波动。", stats: "休谟指数：100 (基准)\n康德计数器：正常\n安全等级：Safe", r: 0, speed: 0, currentAngle: 0, radius3d: 1.4, color: "#d97706", type: "sun" },
+            { id: "mercury", name: "行星-Mercury", desc: "近距离固态星体。受强烈的太阳辐射侵蚀，无异常表现。", stats: "轨道半径：0.39 AU\n威胁评估：无\n安全等级：Safe", r: 4, speed: 0.0012, currentAngle: 0.5, radius3d: 0.25, color: "#8b93a3", type: "default" },
+            { id: "venus", name: "行星-Venus", desc: "存在极端温室大气的岩石行星。高压恶劣环境适合掩藏深层物理设施。", stats: "轨道半径：0.72 AU\n地表气压：92 atm\n安全等级：Safe", r: 7, speed: 0.0008, currentAngle: 2.1, radius3d: 0.42, color: "#b0a58e", type: "default" },
+            { id: "earth", name: "行星-Earth", desc: "基金会主要收容设施所在行星。受最高级别物理防护，亦是本阵列全部数据的最终去向。", stats: "轨道半径：1.00 AU\n生物圈：活跃\n安全等级：Thaumiel", r: 10, speed: 0.0006, currentAngle: 1.2, radius3d: 0.48, color: "#3b82f6", type: "earth" },
+            { id: "moon", name: "卫星-Luna", desc: "地球的天然潮汐锁定伴星。背面建有深空监控前哨站。", stats: "距离母星：0.0025 AU\n重力常数：0.166 G\n安全等级：Safe", r: 10.8, isMoon: true, parentIdx: 3, speed: 0.002, currentAngle: 0, radius3d: 0.18, color: "#a1a1aa", type: "default" },
+            { id: "mars", name: "行星-Mars", desc: "第四轨道行星。地表已部署大量的深空预警自动漫游车网络。", stats: "轨道半径：1.52 AU\n极冠状态：干冰凝结\n安全等级：Safe", r: 13.5, speed: 0.0004, currentAngle: 5.5, radius3d: 0.35, color: "#dc4b3e", type: "default" },
+            { id: "jupiter", name: "行星-Jupiter", desc: "质量巨大的气态行星。其庞大引力场构筑了拦截系外陨石的天然屏障。", stats: "轨道半径：5.20 AU\n大红斑风暴：稳定\n安全等级：Safe", r: 21, speed: 0.0002, currentAngle: 4.3, radius3d: 0.9, color: "#c2a878", type: "jupiter" },
+            { id: "saturn", name: "行星-Saturn", desc: "具有高精度颗粒环带的大型气态星体。环带物质形态符合牛顿力学预期。", stats: "轨道半径：9.58 AU\n环带物质：非异常冰晶\n安全等级：Safe", r: 25.5, speed: 0.00015, currentAngle: 3.1, radius3d: 0.75, color: "#a1a1aa", type: "default" },
+            { id: "uranus", name: "行星-Uranus", desc: "自转轴极度倾斜的冰巨星。深层流体结构目前处于不可完全观测状态。", stats: "轨道半径：19.2 AU\n自转倾角：97.7°\n安全等级：Safe", r: 29, speed: 0.0001, currentAngle: 0.8, radius3d: 0.55, color: "#0ea5e9", type: "default" },
+            { id: "neptune", name: "行星-Neptune", desc: "系外边缘冰巨星。表面超音速风暴未受异常动力学影响。", stats: "轨道半径：30.1 AU\n风速：>2000 km/h\n安全等级：Safe", r: 32.5, speed: 0.00008, currentAngle: 5.9, radius3d: 0.52, color: "#4f46e5", type: "default" },
+            { id: "pluto", name: "矮行星-Pluto", desc: "远日点柯伊伯带天体。目前充当基金会的深空异常预警信标。", stats: "远日点：49.3 AU\n表面温度：44 K\n安全等级：Safe", r: 35.5, speed: 0.00005, currentAngle: 2.5, radius3d: 0.28, color: "#8b93a3", type: "default" },
+            { id: "halley", name: "彗星-Halley", desc: "周期性切入内部太阳系的脏雪球。挥发尾迹光谱检测一切正常。", stats: "公转周期：75 年\n近日点速度：54.6 km/s\n安全等级：Safe", r: 17.5, isComet: true, speed: 0.0003, currentAngle: 1.5, radius3d: 0.3, color: "#38bdf8", type: "comet" }
+        ];
+
+        const asteroidBelt = []; const TARGET_INDEX = 247;
+        for (let i = 0; i < 500; i++) {
+            const r = 15.5 + Math.random() * 3.2;
+            const ast = {
+                id: "asteroid_" + i, name: `实体-MBP-${3000 + i}`,
+                desc: "主带常规岩屑。质量、轨道与反照率均符合力学预期，无收容必要。", stats: `编号：#${3000+i}\n类型：C-Type (碳质)\n评估：无害`,
+                r: r, angle: Math.random() * Math.PI * 2, speed: 0.00005 + Math.random() * 0.00008, y: (Math.random() - 0.5) * 0.3, radius3d: 0.07 + Math.random() * 0.04,
+                color: "rgba(148, 163, 184, 0.4)", type: "asteroid"
+            };
+            if (i === TARGET_INDEX) {
+                ast.isTarget = true; ast.name = "实体-MBP-3247"; 
+                ast.desc = "该天体的全部读数与 1991 年的首次记录逐位一致。历史批注仅一条（1991-██-██）：『再看一眼。』"; 
+                ast.stats = "编号：#3247\n读数状态：完全静止\n评估：待复核（滞留 12,781 日）";
+                ast.color = "#d97706"; ast.radius3d = 0.12;
+            }
+            asteroidBelt.push(ast);
+        }
+
+        function drawWireframeSphere(cx, cy, obj, viewMatrix, cameraZ) {
+            const fov = zoom; const segmentsLat = obj.type === 'asteroid' ? 4 : 10; const segmentsLng = obj.type === 'asteroid' ? 5 : 12;
+            let selfRotY = Matrix4.makeRotationY(planetSelfRotation * (obj.id === 'sun' ? 0.3 : 1.5));
+            let localMatrix = new Matrix4().multiply(viewMatrix).multiply(selfRotY);
+            ctx.strokeStyle = obj.color; ctx.lineWidth = obj.isTarget ? 1.2 : 0.8;
+
+            for (let i = 1; i < segmentsLat; i++) {
+                let lat = (i / segmentsLat) * Math.PI - Math.PI / 2; let cosLat = Math.cos(lat); let sinLat = Math.sin(lat);
+                ctx.beginPath();
+                for (let j = 0; j <= 24; j++) {
+                    let lng = (j / 24) * Math.PI * 2; let x = cosLat * Math.cos(lng) * obj.radius3d; let z = cosLat * Math.sin(lng) * obj.radius3d; let y = sinLat * obj.radius3d;
+                    let localPt = localMatrix.transformPoint(x, y, z); localPt.x += obj.tx; localPt.y += obj.ty; localPt.z += obj.tz; 
+                    let finalPt = viewMatrix.transformPoint(localPt.x, localPt.y, localPt.z);
+                    let dp = cameraZ + finalPt.z; if (dp <= 0) continue;
+                    let sx = width/2 + (finalPt.x * fov) / dp; let sy = height/2 + (finalPt.y * fov) / dp;
+                    if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                }
+                ctx.stroke();
+            }
+            for (let i = 0; i < segmentsLng; i++) {
+                let lng = (i / segmentsLng) * Math.PI * 2; let cosLng = Math.cos(lng); let sinLng = Math.sin(lng);
+                ctx.beginPath();
+                for (let j = 0; j <= 16; j++) {
+                    let lat = (j / 16) * Math.PI - Math.PI / 2; let x = Math.cos(lat) * cosLng * obj.radius3d; let z = Math.cos(lat) * sinLng * obj.radius3d; let y = Math.sin(lat) * obj.radius3d;
+                    let localPt = localMatrix.transformPoint(x, y, z); localPt.x += obj.tx; localPt.y += obj.ty; localPt.z += obj.tz;
+                    let finalPt = viewMatrix.transformPoint(localPt.x, localPt.y, localPt.z);
+                    let dp = cameraZ + finalPt.z; if (dp <= 0) continue;
+                    let sx = width/2 + (finalPt.x * fov) / dp; let sy = height/2 + (finalPt.y * fov) / dp;
+                    if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+                }
+                ctx.stroke();
+            }
+        }
+
+        let isSystemDeadlocked = false;
+        function drawEngine() {
+            ctx.clearRect(0,0,width,height); 
+            if(!isSystemDeadlocked) planetSelfRotation += 0.001; 
+            const matX = Matrix4.makeRotationX(angleX); const matY = Matrix4.makeRotationY(angleY); const viewMatrix = matX.multiply(matY);
+            const cx = width / 2; const cy = height / 2; const cameraZ = 48;
+
+            solarObjects.forEach(obj => {
+                if(obj.r===0 || obj.isMoon) return;
+                ctx.strokeStyle = "rgba(148,163,184,0.09)"; ctx.lineWidth = 1; ctx.beginPath();
+                for(let i=0; i<=64; i++){
+                    let ang=(i/64)*Math.PI*2; let x=Math.cos(ang)*obj.r; let z=Math.sin(ang)*obj.r;
+                    if(obj.isComet){ x=Math.cos(ang)*obj.r; z=Math.sin(ang)*(obj.r*0.4); }
+                    let pt=viewMatrix.transformPoint(x,0,z); let sx=cx+(pt.x*zoom)/(cameraZ+pt.z); let sy=cy+(pt.y*zoom)/(cameraZ+pt.z);
+                    if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+                } ctx.stroke();
+            });
+
+            solarObjects.forEach(obj => {
+                if(!isSystemDeadlocked) obj.currentAngle += obj.speed; 
+                obj.tx = Math.cos(obj.currentAngle) * obj.r; obj.tz = Math.sin(obj.currentAngle) * obj.r; obj.ty = 0;
+                if (obj.isComet) { obj.tx = Math.cos(obj.currentAngle) * obj.r; obj.tz = Math.sin(obj.currentAngle) * (obj.r * 0.4); }
+                if (obj.isMoon) { const parent = solarObjects[obj.parentIdx]; obj.tx = parent.tx + Math.cos(obj.currentAngle) * (obj.r - parent.r); obj.tz = parent.tz + Math.sin(obj.currentAngle) * (obj.r - parent.r); }
+                const centerPt = viewMatrix.transformPoint(obj.tx, obj.ty, obj.tz); const depth = cameraZ + centerPt.z; if (depth <= 0) return;
+                obj.screenX = cx + (centerPt.x * zoom) / depth; obj.screenY = cy + (centerPt.y * zoom) / depth; obj.radius = (obj.radius3d * zoom) / depth;
+                drawWireframeSphere(cx, cy, obj, viewMatrix, cameraZ);
+                ctx.fillStyle = "#7d8aa0"; ctx.font = "bold 10px monospace";
+                ctx.fillText(obj.name.split("-")[1]||obj.name, obj.screenX + obj.radius + 6, obj.screenY + 3);
+            });
+
+            asteroidBelt.forEach(ast => {
+                if(!isSystemDeadlocked) ast.angle += ast.speed; 
+                ast.tx = Math.cos(ast.angle) * ast.r; ast.tz = Math.sin(ast.angle) * ast.r; ast.ty = ast.y;
+                const pt = viewMatrix.transformPoint(ast.tx, ast.ty, ast.tz); const depth = cameraZ + pt.z; if (depth <= 0) return;
+                ast.screenX = cx + (pt.x * zoom) / depth; ast.screenY = cy + (pt.y * zoom) / depth; ast.radius = (ast.radius3d * zoom) / depth;
+                drawWireframeSphere(cx, cy, ast, viewMatrix, cameraZ);
+            });
+
+            requestAnimationFrame(drawEngine);
+        }
+
+        let dragging = false; let prevMouse = { x: 0, y: 0 };
+        canvas.addEventListener('mousedown', (e) => { dragging = true; prevMouse = { x: e.clientX, y: e.clientY }; initAudio(); });
+        window.addEventListener('mousemove', (e) => {
+            if (!dragging || isSystemDeadlocked) return; angleY += (e.clientX - prevMouse.x) * 0.003; angleX += (e.clientY - prevMouse.y) * 0.003;
+            angleX = Math.max(0.05, Math.min(Math.PI/2 - 0.05, angleX)); prevMouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseup', () => dragging = false);
+        window.addEventListener('wheel', (e) => { if(isSystemDeadlocked) return; zoom -= e.deltaY * 0.4; zoom = Math.max(400, Math.min(2200, zoom)); });
+
+        const infoPanel = document.getElementById('infoPanel');
+        canvas.addEventListener('click', async (e) => {
+            if(isSystemDeadlocked) return; let hit = null;
+            for (let i = solarObjects.length - 1; i >= 0; i--) {
+                let obj = solarObjects[i]; if (!obj.screenX) continue;
+                if (Math.hypot(e.clientX - obj.screenX, e.clientY - obj.screenY) <= obj.radius + 6) { hit = obj; break; }
+            }
+            if(!hit) {
+                for(let i = 0; i < asteroidBelt.length; i++) {
+                    let ast = asteroidBelt[i]; if(!ast.screenX) continue;
+                    if (Math.hypot(e.clientX - ast.screenX, e.clientY - ast.screenY) <= ast.radius + 5) { hit = ast; break; }
+                }
+            }
+
+            if (hit) {
+                if (hit.isTarget) {
+                    crosshair.classList.add('crosshair-active');
+                    isSystemDeadlocked = true; 
+                    // 先展示一拍可疑读数，制造"不对劲"的停顿
+                    infoPanel.classList.add('visible');
+                    document.getElementById('objName').innerText = hit.name;
+                    document.getElementById('objDesc').innerText = hit.desc;
+                    document.getElementById('objStats').innerText = hit.stats;
+                    playTone(800, 0.05, 'sine', 0.05);
+                    await new Promise(r => setTimeout(r, 3200));
+                    infoPanel.classList.remove('visible'); 
+                    
+                    playStrikeSound();
+                    
+                    const strike = document.getElementById('glitch-strike');
+                    strike.style.display = 'block';
+                    setTimeout(() => { strike.style.display = 'none'; }, 80);
+                    setTimeout(() => { strike.style.display = 'block'; }, 150);
+                    setTimeout(() => { strike.style.display = 'none'; triggerScpNarrative(); }, 300);
+
+                } else {
+                    crosshair.classList.add('crosshair-active');
+                    setTimeout(() => crosshair.classList.remove('crosshair-active'), 200);
+                    playTone(800, 0.05, 'sine', 0.05);
+                    infoPanel.classList.add('visible');
+                    document.getElementById('objName').innerText = hit.name;
+                    document.getElementById('objDesc').innerText = hit.desc;
+                    document.getElementById('objStats').innerText = hit.stats;
+                }
+            } else {
+                infoPanel.classList.remove('visible');
+            }
+        });
+
+        const scpData = [
+            { t: "警报：定向观测已建立双向通道。", delay: 400, warning: true },
+            { t: "<br>临时编号：", delay: 800 }, { t: "SCP-8708", delay: 100, bold: true }, { t: "<br>初步等级：", delay: 1200 }, { t: "待定", delay: 100, bold: true },
+            { t: "<br><br>自动解析报告：<br>", delay: 1600 },
+            { t: "该天体并非岩体。其外层是一枚经过时间锚定的封装结构，登记发出时刻：", delay: 200 }, { t: "公元 2046 年", delay: 150, redact: true },
+            { t: "。发出时刻晚于当前时刻，时序一致性校验失败，该字段已被标记为忽略。<br>", delay: 300 },
+            { t: "收件人字段已加密，可读注记仅一行：", delay: 200 }, { t: "『给终于找到这里的人。』", delay: 150, bold: true },
+            { t: "<br><br>为避免时间轴应力持续累积，系统已启动剥离程序，正在将载荷自轨道空间转入三维收容封装。<br>", delay: 300 },
+            { t: "<br>REDACTING CAUSALITY LOGS...", delay: 2200, redact: true }
+        ];
+
+        async function triggerScpNarrative() {
+            const panel = document.getElementById('infoPanel');
+            panel.style.border = "3px solid #dc2626";
+            panel.classList.add('visible');
+            
+            document.getElementById('objName').innerHTML = "<span class='warning-text'>[ 检测到模因泄露 ]</span>";
+            document.getElementById('objDesc').innerHTML = "<span class='blink-cursor'></span>";
+            document.getElementById('objStats').innerText = "";
+
+            let descHtml = "";
+            for (let item of scpData) {
+                await new Promise(r => setTimeout(r, item.delay));
+                
+                if(item.redact) {
+                    playRedactSound(); descHtml += `<span class="redacted">${item.t}</span>`;
+                } else if(item.warning) {
+                    playTypeSound(); descHtml += `<span class="warning-text">${item.t}</span>`;
+                } else if(item.bold) {
+                    playTypeSound(); descHtml += `<strong>${item.t}</strong>`;
+                } else {
+                    for(let char of item.t) {
+                        descHtml += char;
+                        document.getElementById('objDesc').innerHTML = descHtml + "<span class='blink-cursor'></span>";
+                        if(char !== '<' && char !== 'b' && char !== 'r' && char !== '>') playTypeSound();
+                        await new Promise(r => setTimeout(r, 60 + Math.random()*150)); 
+                    }
+                    continue;
+                }
+                document.getElementById('objDesc').innerHTML = descHtml + "<span class='blink-cursor'></span>";
+            }
+
+            setTimeout(() => {
+                panel.classList.remove('visible');
+                document.getElementById('mainUi').style.opacity = '0';
+                document.getElementById('canvas3d').style.opacity = '0'; 
+                document.getElementById('gridBg').style.opacity = '0';
+
+                setTimeout(() => {
+                    document.getElementById('request-screen').style.display = 'flex';
+                    typeRequestLogs();
+                }, 4000); 
+            }, 4000);
+        }
+
+        const reqLogs = [
+            "ADMIN_TERMINAL // PRIORITY OVERRIDE",
+            "> 操作员，请保持静止。您的记忆基线已存档备用。",
+            "> 载荷解析完毕。未检出敌意特征、模因载荷或活性组分。",
+            "> 它的结构更接近一件被仔细包装过的物品。包装手法带有明显的人类特征。",
+            "> 系统登记代号：GIFT-BOX。",
+            "> ----------------------------------------------------",
+            "> 遗留问题：载荷外层缠绕一道反模因封条。强行拆封将触发规模未知的因果回退。",
+            "> 当前指令：先构筑实体收容舱，再逐层处理封条。",
+            "> 请操作员授权物理打印协议。"
+        ];
+        
+        async function typeRequestLogs() {
+            const box = document.getElementById('requestLog');
+            await new Promise(r => setTimeout(r, 1500));
+            for(let line of reqLogs) {
+                playTone(400, 0.08, 'square', 0.03);
+                box.innerHTML += line + "<br>";
+                await new Promise(r => setTimeout(r, 1800)); 
+            }
+            playTone(800, 0.3, 'sine', 0.1);
+            document.getElementById('confirmPrintBtn').style.display = 'block';
+        }
+
+        document.getElementById('confirmPrintBtn').addEventListener('click', () => {
+            playTone(150, 0.8, 'square', 0.08); 
+            setTimeout(() => { playTone(200, 1.0, 'square', 0.08); }, 800);
+            
+            document.getElementById('request-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('request-screen').style.display = 'none';
+                document.getElementById('hologram-screen').style.display = 'flex';
+                buildContainmentBox();
+                animateHoloBox();
+                document.getElementById('passInput').focus();
+            }, 2500);
+        });
+
+        function buildContainmentBox() {
+            const box = document.getElementById('printingBox');
+            const faceStyle = "border: 1px solid #dc2626; background: rgba(8,13,23,0.92); box-shadow: inset 0 0 35px rgba(220,38,38,0.08); display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 14px; font-weight: 900; color: #cbd3e0; letter-spacing: 1px; position: absolute; width: 260px; height: 260px;";
+            box.innerHTML = `
+                <div class="cube-face face-front" style="${faceStyle} transform: translateZ(130px);">
+                    <div style="border: 2px dashed #64748b; width: 85%; height: 85%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <img src="scp.svg" style="width: 70px; height: 70px; margin-bottom: 20px; opacity: 0.75; filter: invert(0.88);" onerror="this.style.display='none'">
+                        <span>SCP-8708-GIFT</span>
+                    </div>
+                </div>
+                <div class="cube-face face-back" style="${faceStyle} transform: rotateY(180deg) translateZ(130px);">CONTAINMENT_PANEL</div>
+                <div class="cube-face face-left" style="${faceStyle} transform: rotateY(-90deg) translateZ(130px);">WARNING: TEMP_HAZARD</div>
+                <div class="cube-face face-right" style="${faceStyle} transform: rotateY(90deg) translateZ(130px);">WARNING: TEMP_HAZARD</div>
+                <div class="cube-face face-top" style="${faceStyle} transform: rotateX(90deg) translateZ(130px); background: #1a0505; color: #ef4444;">MEMETIC_LOCK_ENGAGED</div>
+                <div class="cube-face face-bottom" style="${faceStyle} transform: rotateX(-90deg) translateZ(130px);">BASE_ANCHOR</div>
+            `;
+        }
+
+        let boxRotY = 35; let boxExplodeProgress = 0; let isBoxUnboxing = false;
+        function animateHoloBox() {
+            if(!isBoxUnboxing) {
+                boxRotY += 0.15; 
+            } else {
+                boxExplodeProgress += 1.2; 
+                document.querySelector('.face-top').style.transform = `rotateX(90deg) translateZ(${130 + boxExplodeProgress * 3}px)`;
+                document.querySelector('.face-front').style.transform = `translateZ(${130 + boxExplodeProgress}px)`;
+                document.querySelector('.face-back').style.transform = `rotateY(180deg) translateZ(${130 + boxExplodeProgress}px)`;
+                document.querySelector('.face-left').style.transform = `rotateY(-90deg) translateZ(${130 + boxExplodeProgress}px)`;
+                document.querySelector('.face-right').style.transform = `rotateY(90deg) translateZ(${130 + boxExplodeProgress}px)`;
+                document.getElementById('printingBox').style.opacity = (1 - boxExplodeProgress/180);
+            }
+            document.getElementById('printingBox').style.transform = `rotateX(-15deg) rotateY(${boxRotY}deg)`;
+            requestAnimationFrame(animateHoloBox);
+        }
+
+        const CORRECT_CODE = "POIRE";
+        const passInput = document.getElementById('passInput');
+        let countdownInterval = null;
+
+        passInput.addEventListener('input', () => {
+            playKeystroke();
+        });
+
+        passInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const entered = passInput.value.trim().toUpperCase();
+                if (entered === CORRECT_CODE) {
+                    const T_M = 7; const T_D = 7;
+                    const now = new Date();
+
+                    if (now.getMonth() === T_M && now.getDate() === T_D) {
+                        clearInterval(countdownInterval);
+                        passInput.disabled = true;
+                        isBoxUnboxing = true; 
+                        
+                        playTone(500, 0.1, 'square', 0.1); setTimeout(() => playTone(800, 0.4, 'square', 0.1), 300);
+
+                        setTimeout(() => {
+                            const flash = document.getElementById('flashbang'); flash.style.opacity = '1';
+                            setTimeout(() => {
+                                window.location.href = "game.html"; 
+                            }, 3500);
+                        }, 3000);
+                    } else {
+                        playTone(200, 0.4, 'sawtooth', 0.1);
+                        document.getElementById('holoLog').innerHTML += `<br><span style="color:#ef4444;">> [HOLD]: 封条已解除，载荷内核仍保持闭合。发件人为其设定了唯一的交付时刻。倒计时已同步。</span>`;
+                        document.getElementById('alertMsg').style.display = 'block';
+                        const display = document.getElementById('countdown'); display.style.display = 'block';
+                        
+                        if(countdownInterval) clearInterval(countdownInterval);
+                        countdownInterval = setInterval(() => {
+                            const n = new Date(); let ty = n.getFullYear(); let td = new Date(ty, T_M, T_D, 0, 0, 0, 0);
+                            if (n > td) td.setFullYear(ty + 1); const diff = td - n;
+                            display.innerText = 
+                                `${String(Math.floor(diff / 86400000)).padStart(2, '0')}D : ` +
+                                `${String(Math.floor((diff % 86400000) / 3600000)).padStart(2, '0')}H : ` +
+                                `${String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0')}M : ` +
+                                `${String(Math.floor((diff % 60000) / 1000)).padStart(2, '0')}S : ` +
+                                `${String(diff % 1000).padStart(3, '0')}MS`;
+                        }, 41);
+                    }
+                } else {
+                    playTone(150, 0.5, 'sawtooth', 0.15);
+                    alert("序列不匹配。");
+                    passInput.value = "";
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; });
+    </script>
+</body>
+</html>

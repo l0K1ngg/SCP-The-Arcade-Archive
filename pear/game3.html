@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>物理叠叠乐 - 纯净面板版</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; overflow: hidden; font-family: 'Fusion Pixel', monospace; color: #fff; }
+    canvas { display: block; }
+    
+    /* ================= 街机风 HUD 中文计分板 ================= */
+    #ui { 
+      position: absolute; top: 0; left: 0; width: 100%; 
+      pointer-events: none; padding: 20px 30px; 
+      display: flex; justify-content: space-between; align-items: flex-start;
+      z-index: 5;
+    }
+    
+    .arcade-panel {
+      background: rgba(10, 8, 15, 0.85);
+      border: 3px solid;
+      border-radius: 8px;
+      padding: 10px 20px;
+      box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 8px 20px rgba(0,0,0,0.6);
+      text-align: center;
+      min-width: 140px;
+    }
+
+    .score-panel {
+      border-color: #00ffff;
+      box-shadow: inset 0 0 15px rgba(0,255,255,0.15), 0 0 20px rgba(0,255,255,0.3);
+    }
+
+    .target-panel {
+      border-color: #ff00ff;
+      box-shadow: inset 0 0 15px rgba(255,0,255,0.15), 0 0 20px rgba(255,0,255,0.3);
+    }
+
+    .panel-title {
+      font-size: 16px;
+      color: #aaa;
+      letter-spacing: 2px;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    .panel-value {
+      font-size: 42px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .score-panel .panel-value {
+      color: #f1c40f;
+      text-shadow: 0 0 10px #f1c40f, 0 0 20px #e67e22, 2px 2px 0 #000;
+    }
+
+    .target-panel .panel-value {
+      color: #fff;
+      font-size: 20px; 
+      margin-top: 8px;
+    }
+
+    .target-panel .highlight {
+      color: #ff4757;
+      font-size: 42px;
+      text-shadow: 0 0 10px #ff4757, 0 0 20px #c0392b, 2px 2px 0 #000;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* 结算遮罩层 */
+    #overlay { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      background: rgba(10, 8, 15, 0.95); display: none; 
+      flex-direction: column; align-items: center; justify-content: center; z-index: 10; 
+    }
+    #overlay h2 { font-size: 40px; margin-bottom: 8px; text-shadow: 0 0 15px rgba(255,255,255,0.3); font-weight: 900; }
+    #overlay p { color: #aaa; font-size: 18px; margin-bottom: 40px; letter-spacing: 1px; }
+    
+    /* 街机风格闪烁提示 */
+    #ov-hint { 
+      color: #fff; font-size: 22px; font-weight: bold; 
+      animation: blink 1.2s infinite; text-shadow: 0 0 15px #fff; 
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+  </style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="arcade-panel score-panel">
+    <div class="panel-title">当前层数</div>
+    <div class="panel-value" id="sc">0</div>
+  </div>
+  <div class="arcade-panel target-panel">
+    <div class="panel-title">目标层数</div>
+    <div class="panel-value"><span class="highlight">10</span>层</div>
+  </div>
+</div>
+<div id="overlay">
+  <h2 id="ov-h"></h2>
+  <p id="ov-p"></p>
+  <div id="ov-hint"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+const { Engine, World, Bodies, Body, Composite } = Matter;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = window.innerWidth, H = window.innerHeight;
+canvas.width = W; canvas.height = H;
+
+const TARGET = 10;
+let BW = 78, BH = 32, ROPE_LENGTH = 0, GROUND_Y = 0;      
+const PIVOT_SCREEN_Y = 15; 
+const SWING_SPEED = 0.028, MAX_SWING_ANGLE = Math.PI * 0.15; 
+const CAKE_STYLES = [
+  { base: '#f7d794', icing: '#ff7675' }, { base: '#eccc68', icing: '#fffa65' }, 
+  { base: '#cd84f1', icing: '#fff' }, { base: '#b33939', icing: '#ffb8b8' }, 
+  { base: '#ffeaa7', icing: '#10ac84' }  
+];
+
+let engine, ground, pendulum, droppedBodies = [], score = 0;
+let gameState = 'swinging', cameraY = 0, targetCameraY = 0, stableFrames = 0, frameId;
+let swingTime = 0, lastSwingPos = { x: 0, y: 0 };
+let isWin = false; 
+
+function initLayout() { 
+    W = window.innerWidth; H = window.innerHeight; 
+    canvas.width = W; canvas.height = H; 
+    ROPE_LENGTH = H * 0.32; 
+    GROUND_Y = H - 25; 
+}
+
+function initEngine() {
+  initLayout();
+  if(engine) { World.clear(engine.world); Engine.clear(engine); }
+  
+  engine = Engine.create(); 
+  engine.world.gravity.y = 1.2; 
+  engine.positionIterations = 16;
+  engine.velocityIterations = 16;
+
+  // 宽大的安全底座
+  ground = Bodies.rectangle(W/2, GROUND_Y + 15, BW * 3.5, 30, { 
+      isStatic: true, label: 'ground', friction: 1.0, restitution: 0 
+  });
+  World.add(engine.world, ground);
+  
+  droppedBodies = []; 
+  score = 0; 
+  cameraY = 0; 
+  targetCameraY = 0;
+  stableFrames = 0;
+  isWin = false;
+  
+  document.getElementById('sc').innerText = 0;
+  document.getElementById('overlay').style.display = 'none';
+  spawnPendulum();
+}
+
+function spawnPendulum() {
+  if (score >= TARGET) return;
+  
+  pendulum = Bodies.rectangle(W/2, PIVOT_SCREEN_Y + ROPE_LENGTH - cameraY, BW, BH, {
+    isStatic: true, friction: 0.9, restitution: 0.05, density: 0.005, label: 'pending', _style: CAKE_STYLES[score % CAKE_STYLES.length]
+  });
+  World.add(engine.world, pendulum);
+  gameState = 'swinging'; 
+  swingTime = Math.random() * 50; 
+  stableFrames = 0;
+}
+
+function release() {
+  if (gameState !== 'swinging' || !pendulum) return;
+  Body.setStatic(pendulum, false); 
+  
+  Body.setVelocity(pendulum, { x: (pendulum.position.x - lastSwingPos.x) * 1.1, y: (pendulum.position.y - lastSwingPos.y) * 1.1 });
+  Body.setAngularVelocity(pendulum, pendulum.angle * 0.05);
+  
+  pendulum.label = 'dropped'; 
+  droppedBodies.push(pendulum); 
+  pendulum = null;
+  gameState = 'falling'; 
+}
+
+function drawCake(body) {
+  const isGround = body.label === 'ground';
+  ctx.save(); 
+  ctx.translate(body.position.x, body.position.y + cameraY); 
+  ctx.rotate(body.angle);
+  
+  if (isGround) {
+    // -BW * 1.75 是左边界偏移量，BW * 3.5 是总宽度
+    ctx.fillStyle = '#eccc68'; ctx.fillRect(-BW * 1.75, -15, BW * 3.5, 30);
+    ctx.fillStyle = '#ff7f50'; ctx.fillRect(-BW * 1.75, -15, BW * 3.5, 4); 
+  } else {
+    const hw = BW / 2, hh = BH / 2, currentStyle = body._style || CAKE_STYLES[0];
+    ctx.fillStyle = currentStyle.base; ctx.beginPath(); ctx.roundRect(-hw, -hh, BW, BH, [2, 2, 5, 5]); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-hw, -1.5, BW, 3);
+    ctx.fillStyle = currentStyle.icing; ctx.beginPath(); ctx.roundRect(-hw, -hh, BW, BH * 0.38, [2, 2, 0, 0]); ctx.fill();
+    ctx.beginPath();
+    for (let i = 0; i <= 5; i++) {
+      let dx = -hw + (BW / 5) * i;
+      if (i === 0) ctx.moveTo(dx, -hh + BH * 0.38);
+      else { let prevX = -hw + (BW / 5) * (i - 1); ctx.quadraticCurveTo((prevX + dx) / 2, -hh + BH * 0.68, dx, -hh + BH * 0.38); }
+    }
+    ctx.fill();
+    ctx.fillStyle = '#ff4757';
+    for (let j = -1; j <= 1; j++) {
+      ctx.beginPath(); const sx = j * (BW * 0.25), sy = -hh - 1.5;
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2ed573'; ctx.fillRect(sx - 1, sy - 5, 2, 1.5); ctx.fillStyle = '#ff4757';
+    }
+  }
+  ctx.restore();
+}
+
+function checkFallState() {
+  if (droppedBodies.length === 0) return;
+  let latest = droppedBodies[droppedBodies.length - 1];
+
+  // 1. 致命判定：即便在展示时间（celebrating），如果有蛋糕掉出去，依然会判负（塔塌了）
+  if (droppedBodies.some(b => b.position.y > GROUND_Y + BH)) { 
+      if (gameState !== 'over') showOverlay(false, '蛋糕掉在地上勒！'); 
+      return; 
+  }
+
+  // 如果已经是在庆祝阶段，不再处理后续的分数判定
+  if (gameState !== 'falling') return;
+
+  // 2. 稳定判定
+  let isStable = latest.speed < 0.25 && Math.abs(latest.angularVelocity) < 0.04;
+  if (isStable) {
+      stableFrames++;
+  } else {
+      stableFrames = 0;
+  }
+
+  if (stableFrames > 15) {
+      score++; 
+      document.getElementById('sc').innerText = score;
+      
+      // 【新增交互】通关后的全景展示逻辑
+      if (score >= TARGET) {
+          gameState = 'celebrating'; // 进入庆祝状态，暂停物理摇摆生成
+          targetCameraY = 0; // 将镜头平滑降落到底部，展示完整的蛋糕塔
+          
+          // 给玩家 2.5 秒的时间欣赏自己的杰作，然后才弹出结算面板
+          setTimeout(() => {
+              // 确保在欣赏期间塔没有倒塌才弹出胜利
+              if (gameState !== 'over') {
+                  showOverlay(true, '早梨大人的10层草莓蛋糕塔准备好勒！');
+              }
+          }, 2500);
+          return; 
+      }
+
+      // 如果没满10层，继续抬升镜头并生成下一个
+      const topmost = droppedBodies.reduce((t, b) => b.position.y < t.position.y ? b : t, droppedBodies[0]);
+      if (GROUND_Y - topmost.position.y > H * 0.35) { 
+          targetCameraY = (GROUND_Y - topmost.position.y) - H * 0.35; 
+      }
+      
+      gameState = 'placing'; 
+      setTimeout(() => spawnPendulum(), 400); 
+  }
+}
+
+function showOverlay(win, msg) {
+  isWin = win;
+  gameState = 'over';
+  const h = document.getElementById('ov-h'); 
+  h.innerText = win ? '🎉 蛋糕做好勒！' : '💥 糟糕糟糕！'; 
+  h.style.color = win ? '#2ed573' : '#ff4757';
+  
+  document.getElementById('ov-p').innerText = msg; 
+  document.getElementById('ov-hint').innerText = win ? '拍击 或 按空格键 进入下一关' : '拍击 或 按空格键 重新挑战';
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+function loop() {
+  frameId = requestAnimationFrame(loop); 
+  Engine.update(engine, 1000/60);
+  
+  // 镜头的平滑运动（包括展示期的自动下拉）
+  cameraY += (targetCameraY - cameraY) * 0.08; 
+  ctx.clearRect(0, 0, W, H);
+
+  // 只有在摇摆状态才绘制吊绳和准备中的蛋糕
+  if (gameState === 'swinging' && pendulum) {
+    swingTime += SWING_SPEED; 
+    const angle = Math.sin(swingTime) * MAX_SWING_ANGLE; 
+    const px_screen = W / 2 + Math.sin(angle) * ROPE_LENGTH;
+    const py_screen = PIVOT_SCREEN_Y + Math.cos(angle) * ROPE_LENGTH;
+    
+    lastSwingPos = { x: pendulum.position.x, y: pendulum.position.y };
+    
+    Body.setPosition(pendulum, { x: px_screen, y: py_screen - cameraY }); 
+    Body.setAngle(pendulum, angle);
+    
+    ctx.beginPath(); 
+    ctx.moveTo(W / 2, PIVOT_SCREEN_Y); 
+    ctx.lineTo(px_screen, py_screen);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; 
+    ctx.lineWidth = 1.5; 
+    ctx.stroke();
+  }
+
+  Composite.allBodies(engine.world).forEach(b => drawCake(b));
+  
+  if (gameState !== 'over') {
+      checkFallState();
+  }
+}
+
+window.addEventListener('message', e => { 
+    if (e.data === 'TRIGGER_RELEASE' || e.data.type === 'DIR_KEYDOWN') {
+        if (gameState === 'swinging') {
+            release(); 
+        } else if (gameState === 'over') {
+            if (isWin) {
+                window.parent.postMessage("STAGE_CLEAR", "*");
+            } else {
+                cancelAnimationFrame(frameId); 
+                initEngine(); 
+                loop(); 
+            }
+        }
+    }
+});
+
+window.addEventListener('resize', () => { initLayout(); });
+
+initEngine(); 
+loop();
+</script>
+</body>
+</html>
