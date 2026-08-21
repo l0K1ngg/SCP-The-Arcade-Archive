@@ -2,6 +2,8 @@
 
 An interactive browser-based SCP archival horror experience. Follow a recovered 1991 incident trail through Site-192 records, a legacy magnetic-medium terminal, a dormant observation array, and five live containment tests.
 
+**Live experience:** [scp-the-arcade-archive.vercel.app](https://scp-the-arcade-archive.vercel.app/)
+
 ## Repository name
 
 `scp-8707-arcade-archive`
@@ -46,6 +48,10 @@ The included GitHub Actions workflow deploys the repository root to GitHub Pages
 
 No API keys, environment variables, package installation, or build artifacts are required.
 
+The canonical production deployment is hosted on Vercel:
+
+<https://scp-the-arcade-archive.vercel.app/>
+
 ## Technology
 
 - HTML, CSS, Canvas, Web Audio, and WebGL
@@ -62,4 +68,3 @@ This is an unofficial derivative work based on the SCP Foundation collaborative 
 The project is released under [Creative Commons Attribution-ShareAlike 3.0 Unported](LICENSE). Reuse must include attribution and use the same or a compatible ShareAlike license.
 
 This project is not affiliated with or endorsed by the SCP Wiki, Wikidot, or the SCP Foundation community.
-
