@@ -1,0 +1,10 @@
+{
+  "name": "SCP-8707: The Arcade Archive",
+  "short_name": "SCP-8707",
+  "description": "A browser-based SCP archival horror experience with five interactive containment tests.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#111111",
+  "lang": "en"
+}

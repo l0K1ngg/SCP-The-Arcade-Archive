@@ -1,0 +1,18 @@
+{
+  "name": "scp-8707-arcade-archive",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A browser-based SCP archival horror experience with five interactive containment tests.",
+  "scripts": {
+    "validate": "node scripts/validate.mjs"
+  },
+  "license": "CC-BY-SA-3.0",
+  "keywords": [
+    "scp",
+    "interactive-fiction",
+    "browser-game",
+    "webgl",
+    "canvas"
+  ]
+}
+

@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Test 04 // Signal Recovery</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background:
+                radial-gradient(ellipse at 50% 30%, rgba(90, 50, 140, 0.5) 0%, transparent 60%),
+                linear-gradient(135deg, #1b1035, #2a1548, #120a26, #1c2340);
+            background-size: 100% 100%, 400% 400%;
+            animation: neonGradient 12s ease infinite;
+            color: #fff;
+            font-family: ui-monospace, Consolas, monospace;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            user-select: none;
+        }
+        @keyframes neonGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* 全局赛博网格层 */
+        body::before {
+            content: "";
+            position: absolute; inset: 0;
+            background-image:
+                linear-gradient(rgba(0, 255, 255, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 0, 255, 0.08) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        #gameCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 1;
+        }
+
+        /* ================= 街机风 HUD（复用 game3 面板样式） ================= */
+        #ui {
+            position: absolute; top: 0; left: 0; width: 100%;
+            pointer-events: none; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: flex-start;
+            z-index: 5;
+        }
+        .arcade-panel {
+            background: rgba(10, 8, 15, 0.85);
+            border: 3px solid;
+            border-radius: 8px;
+            padding: 8px 18px;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 8px 20px rgba(0,0,0,0.6);
+            text-align: center;
+            min-width: 120px;
+        }
+        .score-panel {
+            border-color: #00ffff;
+            box-shadow: inset 0 0 15px rgba(0,255,255,0.15), 0 0 20px rgba(0,255,255,0.3);
+        }
+        .time-panel {
+            border-color: #f1c40f;
+            box-shadow: inset 0 0 15px rgba(241,196,15,0.15), 0 0 20px rgba(241,196,15,0.3);
+        }
+        .target-panel {
+            border-color: #ff00ff;
+            box-shadow: inset 0 0 15px rgba(255,0,255,0.15), 0 0 20px rgba(255,0,255,0.3);
+        }
+        .panel-title {
+            font-size: 14px; color: #aaa; letter-spacing: 2px;
+            margin-bottom: 4px; font-weight: bold;
+        }
+        .panel-value { font-size: 34px; font-weight: 900; line-height: 1; }
+        .score-panel .panel-value {
+            color: #f1c40f;
+            text-shadow: 0 0 10px #f1c40f, 0 0 20px #e67e22, 2px 2px 0 #000;
+        }
+        .time-panel .panel-value {
+            color: #fff;
+            text-shadow: 0 0 10px #f1c40f, 2px 2px 0 #000;
+        }
+        .time-panel .panel-value.urgent { color: #ff4757; text-shadow: 0 0 12px #ff4757, 2px 2px 0 #000; animation: urgentBlink 0.5s infinite alternate; }
+        @keyframes urgentBlink { from { opacity: 0.5; } to { opacity: 1; } }
+        .target-panel .panel-value {
+            color: #ff4757;
+            text-shadow: 0 0 10px #ff4757, 0 0 20px #c0392b, 2px 2px 0 #000;
+        }
+        #lives { font-size: 18px; margin-top: 5px; letter-spacing: 3px; filter: drop-shadow(0 0 4px #ff4757); }
+
+        /* 开始提示（复用 game2 风格） */
+        #start-overlay {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            text-shadow: 0 0 10px #00ffff;
+            animation: blink 1s infinite alternate;
+            pointer-events: none;
+            z-index: 6;
+        }
+        .title { font-size: 32px; color: #ff00ff; text-shadow: 0 0 15px #ff00ff; margin-bottom: 10px; }
+        .subtitle { font-size: 18px; color: #00ffff; }
+        .sub-note { font-size: 14px; color: #aaa; margin-top: 12px; text-shadow: none; }
+
+        /* 结算遮罩（复用 game3 结构） */
+        #overlay {
+            position: absolute; inset: 0;
+            background: rgba(10, 8, 15, 0.95); display: none;
+            flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10;
+        }
+        #overlay h2 { font-size: 40px; margin-bottom: 8px; text-shadow: 0 0 15px rgba(255,255,255,0.3); font-weight: 900; }
+        #overlay p { color: #aaa; font-size: 18px; margin-bottom: 40px; letter-spacing: 1px; }
+        #ov-hint {
+            color: #fff; font-size: 22px; font-weight: bold;
+            animation: blink 1.2s infinite; text-shadow: 0 0 15px #fff;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<div id="ui">
+    <div class="arcade-panel score-panel">
+        <div class="panel-title">RECOVERED</div>
+        <div class="panel-value" id="sc">0</div>
+        <div id="lives">❤️❤️❤️</div>
+    </div>
+    <div class="arcade-panel time-panel">
+        <div class="panel-title">TIME REMAINING</div>
+        <div class="panel-value" id="tm">60</div>
+    </div>
+    <div class="arcade-panel target-panel">
+        <div class="panel-title">REQUIRED</div>
+        <div class="panel-value">500</div>
+    </div>
+</div>
+
+<div id="start-overlay">
+    <div class="title" id="overlay-title">TEST 04: SIGNAL RECOVERY</div>
+    <div class="subtitle" id="overlay-subtitle">ACTION / SPACE TO OPEN RECEIVER</div>
+    <div class="sub-note">MOVE L/R · AVOID CORRUPTED PACKETS · RECOVER 500 UNITS IN 60 SECONDS</div>
+</div>
+
+<div id="overlay">
+    <h2 id="ov-h"></h2>
+    <p id="ov-p"></p>
+    <div id="ov-hint"></div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    // 画布分辨率 = 实际视口，不再固定 800x600 被 contain 压缩变小变暗
+    let W = 800, H = 600, BASKET_Y = H - 70;
+    let basketRef = null; // 在 basket 声明后赋值，避免首次 fitCanvas 触碰 TDZ
+    function fitCanvas() {
+        W = canvas.width = Math.max(480, window.innerWidth);
+        H = canvas.height = Math.max(320, window.innerHeight);
+        BASKET_Y = H - 70;
+        if (basketRef) {
+            basketRef.x = Math.min(basketRef.x, W - basketRef.w - 6);
+        }
+    }
+    fitCanvas();
+    window.addEventListener('resize', fitCanvas);
+
+    // ================= 【规则参数】 =================
+    const TARGET_SCORE = 500;   // 通关分数
+    const TIME_LIMIT = 60;      // 限时（秒）
+    const MAX_LIVES = 3;
+    const BOMB_CHANCE = 0.18;   // 炸弹出现概率
+    const BOMB_PENALTY = 30;    // 接到炸弹的扣分（另扣 1 命）
+
+    // ================= 【奖励图鉴】种类多多，按价值加权掉落 =================
+    // 越值钱越稀有：v<=15 权重 3，v<=25 权重 2，其余权重 1
+    const GIFTS = [
+        { e: '🎁', v: 15 }, { e: '🎂', v: 30 }, { e: '🍰', v: 20 }, { e: '🧁', v: 15 },
+        { e: '🍓', v: 10 }, { e: '🍭', v: 10 }, { e: '🍬', v: 10 }, { e: '🍩', v: 15 },
+        { e: '🍪', v: 10 }, { e: '🎈', v: 10 }, { e: '🎀', v: 15 }, { e: '🌟', v: 25 },
+        { e: '💎', v: 50 }, { e: '🍫', v: 15 }, { e: '🧸', v: 20 }, { e: '👑', v: 40 },
+        { e: '🍾', v: 25 }, { e: '🥂', v: 20 }, { e: '🍒', v: 10 }, { e: '🎊', v: 15 }
+    ];
+    const GIFT_POOL = [];
+    GIFTS.forEach(g => {
+        const w = g.v <= 15 ? 3 : (g.v <= 25 ? 2 : 1);
+        for (let i = 0; i < w; i++) GIFT_POOL.push(g);
+    });
+
+    // ================= 【核心状态】 =================
+    let gameState = 'ready';   // ready | playing | over
+    let isWin = false;
+    let score = 0, lives = MAX_LIVES, timeLeft = TIME_LIMIT;
+    let elapsed = 0;           // 已进行秒数（用于难度爬升）
+    let items = [];            // 掉落物
+    let floaters = [];         // 漂浮的得分文字
+    let particles = [];        // 爆炸/接住粒子
+    let spawnTimer = 0;
+    let shake = 0;             // 震屏强度
+    let flashAlpha = 0;        // 炸弹红闪
+    let lastTs = 0;
+    let countdownAcc = 0;
+
+    // 收集篮（BASKET_Y 已随视口在 fitCanvas 中动态计算）
+    const basket = { w: 128, h: 36, x: (W - 128) / 2, speed: 7.2 };
+    basketRef = basket;
+
+    let leftPressed = false, rightPressed = false;
+
+    const scEl = document.getElementById('sc');
+    const tmEl = document.getElementById('tm');
+    const livesEl = document.getElementById('lives');
+
+    // ================= 【状态控制】 =================
+    function resetGame() {
+        score = 0; lives = MAX_LIVES; timeLeft = TIME_LIMIT; elapsed = 0;
+        items = []; floaters = []; particles = [];
+        spawnTimer = 0; shake = 0; flashAlpha = 0; countdownAcc = 0;
+        basket.x = (W - basket.w) / 2;
+        isWin = false;
+        updateHUD();
+        tmEl.classList.remove('urgent');
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('start-overlay').style.display = 'block';
+        gameState = 'ready';
+    }
+
+    function startGame() {
+        document.getElementById('start-overlay').style.display = 'none';
+        gameState = 'playing';
+    }
+
+    function updateHUD() {
+        scEl.innerText = score;
+        tmEl.innerText = Math.ceil(timeLeft);
+        livesEl.innerText = '❤️'.repeat(lives) + '🖤'.repeat(MAX_LIVES - lives);
+    }
+
+    function showOverlay(win, msg) {
+        isWin = win;
+        gameState = 'over';
+        const h = document.getElementById('ov-h');
+        h.innerText = win ? 'RECOVERY THRESHOLD MET' : 'RECEIVER FAILURE';
+        h.style.color = win ? '#2ed573' : '#ff4757';
+        document.getElementById('ov-p').innerText = msg;
+        document.getElementById('ov-hint').innerText = win ? 'ACTION / SPACE FOR NEXT TEST' : 'ACTION / SPACE TO RETRY';
+        document.getElementById('overlay').style.display = 'flex';
+    }
+
+    // ================= 【掉落物生成】 =================
+    function spawnItem() {
+        const isBomb = Math.random() < BOMB_CHANCE;
+        const gift = GIFT_POOL[Math.floor(Math.random() * GIFT_POOL.length)];
+        // 难度爬升：随时间下落变快（上限 +55%）
+        const ramp = 1 + Math.min(elapsed / 90, 0.55);
+        items.push({
+            x: 50 + Math.random() * (W - 100),
+            y: -30,
+            vy: (1.7 + Math.random() * 1.1) * ramp,
+            drift: (Math.random() - 0.5) * 0.6,   // 轻微横向飘移
+            rot: (Math.random() - 0.5) * 0.06,
+            angle: 0,
+            size: isBomb ? 42 : 40,
+            emoji: isBomb ? '💣' : gift.e,
+            value: isBomb ? 0 : gift.v,
+            isBomb
+        });
+    }
+
+    function spawnParticles(x, y, color, n) {
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 3;
+            particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1.5, life: 1, color });
+        }
+    }
+
+    // ================= 【判定】 =================
+    function catchItem(it) {
+        if (it.isBomb) {
+            // 炸弹惩罚：扣 1 命 + 扣分 + 震屏红闪
+            lives--;
+            score = Math.max(0, score - BOMB_PENALTY);
+            shake = 14;
+            flashAlpha = 0.45;
+            spawnParticles(it.x, BASKET_Y, '#ff4757', 26);
+            floaters.push({ x: it.x, y: BASKET_Y - 20, text: `💔 -${BOMB_PENALTY}`, color: '#ff4757', life: 1 });
+            updateHUD();
+            if (lives <= 0) {
+                showOverlay(false, 'RECEIVER DESTABILIZED');
+            }
+        } else {
+            score += it.value;
+            spawnParticles(it.x, BASKET_Y, '#f1c40f', 10);
+            floaters.push({ x: it.x, y: BASKET_Y - 20, text: `+${it.value}`, color: it.value >= 40 ? '#ff00ff' : '#f1c40f', life: 1 });
+            updateHUD();
+            if (score >= TARGET_SCORE) {
+                showOverlay(true, `${TARGET_SCORE} UNITS RECOVERED WITH ${Math.ceil(timeLeft)} SECONDS REMAINING`);
+            }
+        }
+    }
+
+    // ================= 【渲染】 =================
+    // 掉落物贴图缓存：canvas 的 shadowBlur 每帧每个都要重做一次高斯模糊，
+    // 屏幕上一二十个道具就足以拖垮帧率。这里把「光晕 + emoji」预渲染成离屏小图，
+    // 之后每帧只做一次 drawImage。emoji 种类和尺寸都是固定的，缓存最多二十来张。
+    const spriteCache = new Map();
+    function getSprite(emoji, size, isBomb) {
+        const key = emoji + '|' + size + '|' + isBomb;
+        const hit = spriteCache.get(key);
+        if (hit) return hit;
+
+        const pad = Math.ceil(size * 1.1);
+        const c = document.createElement('canvas');
+        c.width = c.height = size + pad * 2;
+        const g = c.getContext('2d');
+        const m = c.width / 2;
+
+        // 背后的光晕圆盘：即使隔着街机的 CRT 蒙层也能一眼看见
+        const r = size * 0.9;
+        const halo = g.createRadialGradient(m, m, 0, m, m, r);
+        if (isBomb) {
+            halo.addColorStop(0, 'rgba(255, 71, 87, 0.55)');
+            halo.addColorStop(0.55, 'rgba(255, 71, 87, 0.18)');
+            halo.addColorStop(1, 'rgba(255, 71, 87, 0)');
+        } else {
+            halo.addColorStop(0, 'rgba(255, 232, 160, 0.6)');
+            halo.addColorStop(0.55, 'rgba(255, 210, 90, 0.2)');
+            halo.addColorStop(1, 'rgba(255, 200, 60, 0)');
+        }
+        g.fillStyle = halo;
+        g.beginPath();
+        g.arc(m, m, r, 0, Math.PI * 2);
+        g.fill();
+
+        // emoji 本体。显式指定 fillStyle：万一系统回退到单色字形，
+        // 也会画成亮色而不是默认的黑色（看起来就是「灰的」）
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", "EmojiOne Color", sans-serif`;
+        g.fillStyle = isBomb ? '#ff6b81' : '#ffe9a8';
+        g.shadowColor = isBomb ? '#ff4757' : 'rgba(255, 215, 100, 0.95)';
+        g.shadowBlur = isBomb ? 26 : 22;
+        g.fillText(emoji, m, m);
+        g.shadowBlur = isBomb ? 12 : 10;   // 二次描绘：加深发光，抵消街机蒙层的压暗
+        g.fillText(emoji, m, m);
+
+        spriteCache.set(key, c);
+        return c;
+    }
+
+    function drawBasket() {
+        const bx = basket.x, by = BASKET_Y;
+        ctx.save();
+
+        // 篮身：霓虹礼盒
+        const grad = ctx.createLinearGradient(bx, by, bx, by + basket.h);
+        grad.addColorStop(0, '#ff00ff');
+        grad.addColorStop(1, '#7a0d7a');
+        ctx.fillStyle = grad;
+        ctx.shadowColor = '#ff00ff';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, basket.w, basket.h, [4, 4, 10, 10]);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // 盒身缎带
+        ctx.fillStyle = '#00ffff';
+        ctx.fillRect(bx + basket.w / 2 - 5, by, 10, basket.h);
+        ctx.fillRect(bx, by + basket.h / 2 - 3, basket.w, 6);
+
+        // 开口高亮：提示接取判定边缘
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(bx - 4, by);
+        ctx.lineTo(bx + basket.w + 4, by);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    function drawScene() {
+        ctx.clearRect(0, 0, W, H);
+        ctx.save();
+        if (shake > 0) {
+            ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+            shake *= 0.86;
+            if (shake < 0.5) shake = 0;
+        }
+
+
+        // 地平线
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, H - 24);
+        ctx.lineTo(W, H - 24);
+        ctx.stroke();
+
+        // 掉落物
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        items.forEach(it => {
+            const sp = getSprite(it.emoji, it.size, it.isBomb);
+            ctx.save();
+            ctx.translate(it.x, it.y);
+            ctx.rotate(it.angle);
+            ctx.drawImage(sp, -sp.width / 2, -sp.height / 2);
+            ctx.restore();
+        });
+
+        drawBasket();
+
+        // 粒子
+        particles.forEach(p => {
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+        });
+        ctx.globalAlpha = 1;
+
+        // 漂浮得分
+        ctx.font = 'bold 20px monospace';
+        floaters.forEach(f => {
+            ctx.globalAlpha = f.life;
+            ctx.fillStyle = f.color;
+            ctx.shadowColor = f.color;
+            ctx.shadowBlur = 8;
+            ctx.fillText(f.text, f.x, f.y);
+            ctx.shadowBlur = 0;
+        });
+        ctx.globalAlpha = 1;
+
+        ctx.restore();
+
+        // 炸弹红闪（不参与震屏位移）
+        if (flashAlpha > 0) {
+            ctx.fillStyle = `rgba(255, 40, 60, ${flashAlpha})`;
+            ctx.fillRect(0, 0, W, H);
+            flashAlpha -= 0.03;
+        }
+    }
+
+    // ================= 【主循环】 =================
+    function update(dt) {
+        if (gameState !== 'playing') return;
+
+        // 倒计时
+        countdownAcc += dt;
+        elapsed += dt;
+        timeLeft = Math.max(0, TIME_LIMIT - elapsed);
+        if (countdownAcc >= 0.2) {
+            countdownAcc = 0;
+            tmEl.innerText = Math.ceil(timeLeft);
+            tmEl.classList.toggle('urgent', timeLeft <= 10);
+        }
+        if (timeLeft <= 0) {
+            showOverlay(false, `WINDOW CLOSED — ${score} / ${TARGET_SCORE} UNITS RECOVERED`);
+            return;
+        }
+
+        // 帧率补偿系数：以 60fps 为基准。掉帧时补上位移，
+        // 否则掉落变慢 → 屏幕上堆的道具更多 → 更卡 → 更慢，会自己滚成雪球。
+        const k = dt * 60;
+
+        // 篮子移动
+        if (leftPressed) basket.x = Math.max(6, basket.x - basket.speed * k);
+        if (rightPressed) basket.x = Math.min(W - basket.w - 6, basket.x + basket.speed * k);
+
+        // 生成掉落物：间隔随时间从 0.78s 收紧到 0.55s（同屏上限 24 个，兜底防堆积）
+        spawnTimer -= dt;
+        if (spawnTimer <= 0) {
+            if (items.length < 24) spawnItem();
+            spawnTimer = Math.max(0.55, 0.78 - elapsed * 0.004) + Math.random() * 0.15;
+        }
+
+        // 掉落物运动与判定
+        for (let i = items.length - 1; i >= 0; i--) {
+            const it = items[i];
+            it.y += it.vy * k;
+            it.x += it.drift * k;
+            it.angle += it.rot * k;
+            if (it.x < 20) { it.x = 20; it.drift *= -1; }
+            if (it.x > W - 20) { it.x = W - 20; it.drift *= -1; }
+
+            // 接住判定：到达篮口高度且横向落在篮内
+            if (it.y + it.size * 0.35 >= BASKET_Y && it.y < BASKET_Y + basket.h &&
+                it.x > basket.x - 6 && it.x < basket.x + basket.w + 6) {
+                items.splice(i, 1);
+                catchItem(it);
+                if (gameState !== 'playing') return;
+                continue;
+            }
+            // 落出屏幕：奖励漏掉不惩罚，炸弹漏掉是好事
+            if (it.y > H + 40) items.splice(i, 1);
+        }
+
+        // 粒子与漂浮字
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx * k; p.y += p.vy * k; p.vy += 0.12 * k; p.life -= 0.03 * k;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+        for (let i = floaters.length - 1; i >= 0; i--) {
+            const f = floaters[i];
+            f.y -= 0.8 * k; f.life -= 0.02 * k;
+            if (f.life <= 0) floaters.splice(i, 1);
+        }
+    }
+
+    function loop(ts) {
+        requestAnimationFrame(loop);
+        const dt = Math.min((ts - lastTs) / 1000, 0.05) || 0;
+        lastTs = ts;
+        update(dt);
+        drawScene();
+    }
+
+    // ================= 【动作入口】 =================
+    function handleAction() {
+        if (gameState === 'ready') {
+            startGame();
+        } else if (gameState === 'over') {
+            if (isWin) {
+                window.parent.postMessage('STAGE_CLEAR', '*');
+            } else {
+                resetGame();
+            }
+        }
+    }
+
+    // ================= 【输入监听】与主框架协议一致 =================
+    window.addEventListener('message', (event) => {
+        const msg = event.data;
+        if (msg && msg.type === 'DIR_KEYDOWN') {
+            if (msg.key === 'dir-left') leftPressed = true;
+            if (msg.key === 'dir-right') rightPressed = true;
+        } else if (msg && msg.type === 'DIR_KEYUP') {
+            if (msg.key === 'dir-left') leftPressed = false;
+            if (msg.key === 'dir-right') rightPressed = false;
+        } else if (msg === 'TRIGGER_RELEASE') {
+            handleAction();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Right' || e.key === 'ArrowRight' || e.code === 'KeyD') rightPressed = true;
+        else if (e.key === 'Left' || e.key === 'ArrowLeft' || e.code === 'KeyA') leftPressed = true;
+        else if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); handleAction(); }
+    }, false);
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'Right' || e.key === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
+        else if (e.key === 'Left' || e.key === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
+    }, false);
+
+    resetGame();
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>
